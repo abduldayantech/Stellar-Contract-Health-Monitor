@@ -646,14 +646,24 @@ describe('alert rules, destinations and alert history', () => {
     ).json();
     expect(failed.items.map((a: { id: string }) => a.id)).toEqual([alert.id]);
 
+    const tooLong = await ctx.app.inject({
+      method: 'POST',
+      url: `/alerts/${alert.id}/acknowledge`,
+      headers: auth,
+      payload: { note: 'x'.repeat(1001) },
+    });
+    expect(tooLong.statusCode).toBe(400);
+
     const ack = await ctx.app.inject({
       method: 'POST',
       url: `/alerts/${alert.id}/acknowledge`,
       headers: auth,
+      payload: { note: '  Known issue, extending TTL tomorrow  ' },
     });
     expect(ack.json()).toMatchObject({
       status: 'ACKNOWLEDGED',
       acknowledgedBy: 'Admin (bootstrap token)',
+      acknowledgeNote: 'Known issue, extending TTL tomorrow',
     });
     expect(
       (
@@ -678,8 +688,17 @@ describe('alert rules, destinations and alert history', () => {
       method: 'POST',
       url: `/alerts/${alert.id}/resolve`,
       headers: auth,
+      payload: { note: 'TTL extended' },
     });
-    expect(resolved.json().status).toBe('RESOLVED');
+    expect(resolved.json()).toMatchObject({
+      status: 'RESOLVED',
+      resolvedBy: 'Admin (bootstrap token)',
+      resolveNote: 'TTL extended',
+      // The acknowledgement note is kept.
+      acknowledgeNote: 'Known issue, extending TTL tomorrow',
+    });
+    const listed = (await ctx.app.inject({ url: '/alerts', headers: auth })).json();
+    expect(listed.items[0]).toMatchObject({ id: alert.id, resolveNote: 'TTL extended' });
     const state = await ctx.prisma.alertRuleState.findFirstOrThrow({ where: { ruleId: rule.id } });
     expect(state.openAlertId).toBeNull();
 

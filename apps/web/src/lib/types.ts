@@ -78,7 +78,10 @@ export interface AlertItem {
   triggeredAt: string;
   acknowledgedAt: string | null;
   acknowledgedBy: string | null;
+  acknowledgeNote?: string | null;
   resolvedAt: string | null;
+  resolvedBy?: string | null;
+  resolveNote?: string | null;
   rule: { id: string; name: string; type: string } | null;
   contract: { id: string; contractId: string; label: string | null; network: Network } | null;
   deliveries: Delivery[];

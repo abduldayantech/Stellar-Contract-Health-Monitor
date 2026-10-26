@@ -151,6 +151,12 @@ export const listAlertsQuerySchema = z.object({
   cursor: z.string().optional(),
 });
 
+/** Optional body for POST /alerts/:id/acknowledge and /resolve. */
+export const alertActionSchema = z
+  .object({ note: z.string().trim().max(1000).optional() })
+  .optional()
+  .transform((b) => ({ note: b?.note ? b.note : null }));
+
 export const upsertNetworkConfigSchema = z.object({
   rpcUrl: z.string().url(),
   networkPassphrase: z.string().min(1).max(200).optional(),

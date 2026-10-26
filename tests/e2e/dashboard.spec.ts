@@ -71,14 +71,18 @@ test('alert history shows failed notifications and supports acknowledge, retry a
   await page.getByRole('button', { name: /Failed notifications/ }).click();
 
   await page.getByRole('button', { name: 'Acknowledge', exact: true }).first().click();
+  await page.getByLabel('Note (optional)').fill('Known issue, extending TTL tomorrow');
+  await page.getByRole('button', { name: 'Acknowledge alert' }).click();
   await expect(page.getByRole('button', { name: 'Acknowledged (1)' })).toBeVisible();
 
   await page.getByText(SEED.alertTitle).first().click();
+  await expect(page.getByText('Known issue, extending TTL tomorrow')).toBeVisible();
   await expect(page.getByText('Webhook responded 500')).toBeVisible();
   await page.getByRole('button', { name: 'Retry', exact: true }).first().click();
   await expect(page.getByRole('button', { name: 'Failed notifications (0)' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Resolve', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Resolve alert' }).click();
   await expect(page.getByRole('button', { name: 'Resolved (1)' })).toBeVisible();
 });
 

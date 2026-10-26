@@ -126,14 +126,14 @@ Rule body:
 
 ### Alerts
 
-| Method | Path                      | Description                                                  |
-| ------ | ------------------------- | ------------------------------------------------------------ |
-| GET    | `/alerts`                 | `?status&contractRefId&ruleId&deliveryStatus&limit&cursor`   |
-| GET    | `/alerts/summary`         | Counts by status and failed deliveries                       |
-| GET    | `/alerts/:id`             | One alert with its deliveries                                |
-| POST   | `/alerts/:id/acknowledge` | `TRIGGERED` → `ACKNOWLEDGED`                                 |
-| POST   | `/alerts/:id/resolve`     | Resolve (level rules can fire again if the condition recurs) |
-| POST   | `/deliveries/:id/retry`   | Retry a failed delivery                                      |
+| Method | Path                      | Description                                                                          |
+| ------ | ------------------------- | ------------------------------------------------------------------------------------ |
+| GET    | `/alerts`                 | `?status&contractRefId&ruleId&deliveryStatus&limit&cursor`                           |
+| GET    | `/alerts/summary`         | Counts by status and failed deliveries                                               |
+| GET    | `/alerts/:id`             | One alert with its deliveries                                                        |
+| POST   | `/alerts/:id/acknowledge` | `TRIGGERED` → `ACKNOWLEDGED`; optional body `{note}` (max 1000 chars)                |
+| POST   | `/alerts/:id/resolve`     | Resolve (level rules can fire again if the condition recurs); optional body `{note}` |
+| POST   | `/deliveries/:id/retry`   | Retry a failed delivery                                                              |
 
 ### Settings
 

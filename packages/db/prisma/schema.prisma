@@ -219,7 +219,13 @@ model Alert {
   triggeredAt    DateTime               @default(now())
   acknowledgedAt DateTime?
   acknowledgedBy String?
+  /// Optional note left by the responder when acknowledging.
+  acknowledgeNote String?
   resolvedAt     DateTime?
+  /// Who resolved it by hand; null when the condition cleared on its own.
+  resolvedBy     String?
+  /// Optional note left when resolving.
+  resolveNote    String?
   deliveries     NotificationDelivery[]
 
   @@index([triggeredAt(sort: Desc)])
