@@ -13,7 +13,7 @@
   "dependencies": {
     "@stellar-health/shared-types": "workspace:*",
     "@stellar-health/ui": "workspace:*",
-    "next": "~15.5.0",
+    "next": "~16.4.0",
     "react": "~19.1.0",
     "react-dom": "~19.1.0",
     "swr": "^2.3.0"
