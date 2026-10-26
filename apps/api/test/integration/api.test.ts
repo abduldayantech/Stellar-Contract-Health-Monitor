@@ -71,6 +71,30 @@ describe('status and auth', () => {
     expect(res.body).toContain('schm_http_request_duration_seconds');
   });
 
+  it('returns a request ID on every response and in error bodies', async () => {
+    const ok = await ctx.app.inject({ url: '/health', headers: { 'x-request-id': 'trace-42' } });
+    expect(ok.headers['x-request-id']).toBe('trace-42');
+
+    const generated = await ctx.app.inject({ url: '/health' });
+    expect(generated.headers['x-request-id']).toMatch(/^[0-9a-f-]{36}$/);
+
+    const unsafe = await ctx.app.inject({
+      url: '/contracts',
+      headers: { 'x-request-id': 'no spaces allowed' },
+    });
+    expect(unsafe.statusCode).toBe(401);
+    const id = unsafe.headers['x-request-id'];
+    expect(id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(unsafe.json().error.requestId).toBe(id);
+
+    const missing = await ctx.app.inject({
+      url: '/nope',
+      headers: { ...auth, 'x-request-id': 'r-1' },
+    });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json().error).toMatchObject({ code: 'NOT_FOUND', requestId: 'r-1' });
+  });
+
   it('rejects requests without a valid token', async () => {
     expect((await ctx.app.inject({ url: '/contracts' })).statusCode).toBe(401);
     const bad = await ctx.app.inject({
