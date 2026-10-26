@@ -321,6 +321,43 @@ describe('contract registry', () => {
     expect(res.json().startLedger).toBe(80_001);
   });
 
+  it('pages through contracts with a cursor, returning each exactly once', async () => {
+    const createdAt = new Date('2026-01-01T00:00:00Z');
+    // Same createdAt for all rows, so ordering must fall back to the id tiebreaker.
+    await ctx.prisma.contract.createMany({
+      data: Array.from({ length: 23 }, (_, i) => ({
+        contractId: contractId(100 + i),
+        network: 'TESTNET' as const,
+        startLedger: 1,
+        createdAt,
+      })),
+    });
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    let pages = 0;
+    do {
+      const res = await ctx.app.inject({
+        url: `/contracts?limit=10${cursor ? `&cursor=${cursor}` : ''}`,
+        headers: auth,
+      });
+      expect(res.statusCode).toBe(200);
+      const page = res.json() as { items: { id: string }[]; nextCursor: string | null };
+      seen.push(...page.items.map((c) => c.id));
+      cursor = page.nextCursor;
+      pages++;
+    } while (cursor);
+    expect(pages).toBe(3);
+    expect(seen).toHaveLength(23);
+    expect(new Set(seen).size).toBe(23);
+
+    const defaults = (await ctx.app.inject({ url: '/contracts', headers: auth })).json();
+    expect(defaults.items).toHaveLength(23);
+    expect(defaults.nextCursor).toBeNull();
+    expect((await ctx.app.inject({ url: '/contracts?limit=501', headers: auth })).statusCode).toBe(
+      400,
+    );
+  });
+
   it('lists, searches, pauses and deletes contracts', async () => {
     const a = await register(5, 'Alpha token');
     await register(6, 'Beta pool');

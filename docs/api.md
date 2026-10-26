@@ -59,7 +59,8 @@ never stored. Read it with `GET /audit-log` (admins only) or in **Settings → A
 ## Pagination
 
 List endpoints for events and alerts return `{ "items": [...], "nextCursor": "..." | null }`.
-Pass `cursor=<nextCursor>` to get the next page; `limit` is 1–200 (default 50).
+Pass `cursor=<nextCursor>` to get the next page; `limit` is 1–200 (default 50), except
+`GET /contracts`, where it is 1–500 (default 100).
 
 ## Endpoints
 
@@ -79,7 +80,7 @@ Pass `cursor=<nextCursor>` to get the next page; `limit` is 1–200 (default 50)
 | ------ | ----------------------------------------- | ------------------------------------------------------------------------------------- |
 | POST   | `/contracts/validate`                     | `{contractId, network}` – checks format and that the contract exists on chain         |
 | POST   | `/contracts`                              | `{contractId, network, label?, lookbackLedgers?}` – register and start monitoring     |
-| GET    | `/contracts`                              | `?network&status&search`                                                              |
+| GET    | `/contracts`                              | `?network&status&search&limit&cursor` – newest first; `limit` 1–500, default **100**  |
 | GET    | `/contracts/:id`                          | Details, storage entries with TTLs, rules, recent alerts                              |
 | GET    | `/contracts/:id/activity`                 | `?hours=24` – event counts per hour (per day above 72 h)                              |
 | PATCH  | `/contracts/:id`                          | `{label?, status?: ACTIVE\|PAUSED}`                                                   |
