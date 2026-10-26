@@ -578,6 +578,19 @@ describe('alert rules, destinations and alert history', () => {
     expect(rule).toMatchObject({ type: 'EVENT_MATCH', severity: 'WARNING', cooldownSeconds: 300 });
     expect(rule.destinations.map((x: { id: string }) => x.id)).toEqual([d.id]);
 
+    const upgrades = await ctx.app.inject({
+      method: 'POST',
+      url: '/alert-rules',
+      headers: auth,
+      payload: { name: 'Upgrades', type: 'WASM_CHANGED', severity: 'CRITICAL' },
+    });
+    expect(upgrades.statusCode).toBe(201);
+    expect(upgrades.json()).toMatchObject({
+      type: 'WASM_CHANGED',
+      config: {},
+      contractRefId: null,
+    });
+
     const bad = await ctx.app.inject({
       method: 'PATCH',
       url: `/alert-rules/${rule.id}`,

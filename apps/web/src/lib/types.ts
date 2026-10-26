@@ -42,7 +42,7 @@ export interface StorageEntry {
 export interface AlertRule {
   id: string;
   name: string;
-  type: 'EVENT_MATCH' | 'TTL_EXPIRY' | 'INACTIVITY';
+  type: 'EVENT_MATCH' | 'TTL_EXPIRY' | 'INACTIVITY' | 'WASM_CHANGED';
   contractRefId: string | null;
   contract: { id: string; contractId: string; label: string | null; network: Network } | null;
   enabled: boolean;

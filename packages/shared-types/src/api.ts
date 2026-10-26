@@ -91,6 +91,10 @@ export const createAlertRuleSchema = z.discriminatedUnion('type', [
     type: z.literal('INACTIVITY'),
     config: alertRuleConfigSchemas.INACTIVITY,
   }),
+  baseRuleSchema.extend({
+    type: z.literal('WASM_CHANGED'),
+    config: alertRuleConfigSchemas.WASM_CHANGED.default({}),
+  }),
 ]);
 
 export const updateAlertRuleSchema = z.object({

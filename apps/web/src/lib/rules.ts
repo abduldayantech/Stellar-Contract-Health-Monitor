@@ -5,6 +5,7 @@ export const RULE_TYPE_LABELS: Record<AlertRule['type'], string> = {
   EVENT_MATCH: 'Event match',
   TTL_EXPIRY: 'Storage TTL expiry',
   INACTIVITY: 'Inactivity',
+  WASM_CHANGED: 'Contract WASM upgraded',
 };
 
 /** One-line human description of what a rule does. */
@@ -25,5 +26,7 @@ export function describeRule(rule: Pick<AlertRule, 'type' | 'config' | 'cooldown
     }
     case 'INACTIVITY':
       return `No events for ${formatDuration(Number(c.windowSeconds ?? 0))}`;
+    case 'WASM_CHANGED':
+      return 'When the contract is upgraded to a different WASM';
   }
 }

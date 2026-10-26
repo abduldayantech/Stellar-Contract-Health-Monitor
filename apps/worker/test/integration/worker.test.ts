@@ -330,6 +330,102 @@ describe('storage TTL and inactivity rules', () => {
   });
 });
 
+describe('WASM upgrade rule', () => {
+  it('alerts once when the WASM hash changes and follows the new code entry', async () => {
+    const oldHash = 'aa'.repeat(32);
+    const newHash = 'bb'.repeat(32);
+    const c = await createContract(50);
+    await prisma.contract.update({
+      where: { id: c.id },
+      data: {
+        executableType: 'wasm',
+        wasmHash: oldHash,
+        storageEntries: {
+          create: [
+            { kind: 'INSTANCE', label: 'Contract instance', ledgerKeyXdr: 'instance-50' },
+            { kind: 'CODE', label: 'Contract code (WASM)', ledgerKeyXdr: 'code-old' },
+          ],
+        },
+      },
+    });
+    const d = await webhookDestination('https://example.com/hook');
+    const rule = await prisma.alertRule.create({
+      data: {
+        name: 'Upgrades',
+        type: 'WASM_CHANGED',
+        severity: 'CRITICAL',
+        config: {},
+        destinations: { connect: [{ id: d.id }] },
+      },
+    });
+    const info = {
+      contractId: c.contractId,
+      executableType: 'wasm' as const,
+      wasmHash: oldHash,
+      instanceLedgerKeyXdr: 'instance-50',
+      codeLedgerKeyXdr: 'code-old',
+      instanceLiveUntilLedger: 5000,
+      codeLiveUntilLedger: 5000,
+      latestLedger: 1000,
+    };
+    h.rpc.contractInfos.set(c.contractId, info);
+
+    // Unchanged hash: nothing happens.
+    await checkStorage(h.deps, c.id);
+    expect(await prisma.alert.count()).toBe(0);
+
+    h.rpc.contractInfos.set(c.contractId, {
+      ...info,
+      wasmHash: newHash,
+      codeLedgerKeyXdr: 'code-new',
+      codeLiveUntilLedger: 9000,
+    });
+    await checkStorage(h.deps, c.id);
+    await checkStorage(h.deps, c.id);
+
+    const alerts = await prisma.alert.findMany();
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toMatchObject({ ruleId: rule.id, severity: 'CRITICAL' });
+    expect(alerts[0]!.title).toContain('WASM upgraded');
+    expect(alerts[0]!.context).toMatchObject({ previousWasmHash: oldHash, newWasmHash: newHash });
+    expect(h.queued).toHaveLength(1);
+
+    const after = await prisma.contract.findUniqueOrThrow({
+      where: { id: c.id },
+      include: { storageEntries: { where: { kind: 'CODE' } } },
+    });
+    expect(after.wasmHash).toBe(newHash);
+    expect(after.storageEntries).toHaveLength(1);
+    expect(after.storageEntries[0]!.ledgerKeyXdr).toBe('code-new');
+  });
+
+  it('records a first-seen hash without alerting', async () => {
+    const c = await createContract(51);
+    await prisma.storageEntry.create({
+      data: { contractRefId: c.id, kind: 'INSTANCE', label: 'i', ledgerKeyXdr: 'instance-51' },
+    });
+    await prisma.alertRule.create({ data: { name: 'U', type: 'WASM_CHANGED', config: {} } });
+    h.rpc.contractInfos.set(c.contractId, {
+      contractId: c.contractId,
+      executableType: 'wasm',
+      wasmHash: 'cc'.repeat(32),
+      instanceLedgerKeyXdr: 'instance-51',
+      codeLedgerKeyXdr: 'code-51',
+      instanceLiveUntilLedger: 5000,
+      codeLiveUntilLedger: 5000,
+      latestLedger: 1000,
+    });
+    await checkStorage(h.deps, c.id);
+    expect(await prisma.alert.count()).toBe(0);
+    const after = await prisma.contract.findUniqueOrThrow({
+      where: { id: c.id },
+      include: { storageEntries: { where: { kind: 'CODE' } } },
+    });
+    expect(after.wasmHash).toBe('cc'.repeat(32));
+    expect(after.storageEntries[0]!.ledgerKeyXdr).toBe('code-51');
+  });
+});
+
 describe('webhook delivery', () => {
   let server: Server;
   let url: string;

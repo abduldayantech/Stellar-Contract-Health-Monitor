@@ -8,6 +8,7 @@ import {
 import { ttlExpiryConfigSchema, type Network } from '@stellar-health/shared-types';
 import { activeRulesFor, openAlertFor, resolveLevelAlert, triggerAlert } from './alerts';
 import type { WorkerDeps } from './deps';
+import { checkWasmUpgrade } from './upgrades';
 
 /**
  * Refreshes TTLs (liveUntilLedger) of a contract's monitored storage entries
@@ -25,6 +26,19 @@ export async function checkStorage(deps: WorkerDeps, contractRefId: string) {
   const network = contract.network as Network;
   const client = await deps.getClient(network);
   const now = deps.now();
+
+  if (contract.executableType !== 'stellar_asset') {
+    try {
+      const { changed } = await checkWasmUpgrade(deps, contract, client);
+      // The CODE entry now points at the new code; reload before refreshing TTLs.
+      if (changed)
+        contract.storageEntries = await prisma.storageEntry.findMany({
+          where: { contractRefId: contract.id },
+        });
+    } catch (err) {
+      deps.logger.warn({ err, contractRefId }, 'failed to check for a WASM upgrade');
+    }
+  }
 
   const { latestLedger, entries } = await client.getLedgerEntryTtls(
     contract.storageEntries.map((s) => s.ledgerKeyXdr),

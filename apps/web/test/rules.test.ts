@@ -19,5 +19,8 @@ describe('describeRule', () => {
     expect(
       describeRule({ type: 'TTL_EXPIRY', config: { ledgersThreshold: 17280 }, cooldownSeconds: 0 }),
     ).toMatch(/^Storage with < 17,280 ledgers \(~.+\) to live$/);
+    expect(describeRule({ type: 'WASM_CHANGED', config: {}, cooldownSeconds: 0 })).toBe(
+      'When the contract is upgraded to a different WASM',
+    );
   });
 });

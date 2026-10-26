@@ -4,7 +4,12 @@ export type ContractStatus = (typeof CONTRACT_STATUSES)[number];
 export const STORAGE_ENTRY_KINDS = ['INSTANCE', 'CODE', 'PERSISTENT', 'TEMPORARY'] as const;
 export type StorageEntryKind = (typeof STORAGE_ENTRY_KINDS)[number];
 
-export const ALERT_RULE_TYPES = ['EVENT_MATCH', 'TTL_EXPIRY', 'INACTIVITY'] as const;
+export const ALERT_RULE_TYPES = [
+  'EVENT_MATCH',
+  'TTL_EXPIRY',
+  'INACTIVITY',
+  'WASM_CHANGED',
+] as const;
 export type AlertRuleType = (typeof ALERT_RULE_TYPES)[number];
 
 export const ALERT_SEVERITIES = ['INFO', 'WARNING', 'CRITICAL'] as const;

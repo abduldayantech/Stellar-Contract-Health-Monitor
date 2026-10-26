@@ -128,3 +128,22 @@ export function describeInactivity(params: {
     },
   };
 }
+
+export function describeWasmChanged(params: {
+  ruleName: string;
+  contract: ContractRef;
+  previousWasmHash: string;
+  newWasmHash: string;
+  latestLedger: number;
+}): AlertDescription {
+  const { contract, previousWasmHash, newWasmHash } = params;
+  return {
+    title: `Contract WASM upgraded on ${contractName(contract)}`,
+    message: `Rule "${params.ruleName}": the contract on ${contract.network.toLowerCase()} now runs WASM ${newWasmHash} (was ${previousWasmHash}). If you did not expect this upgrade, investigate the transaction that changed it.`,
+    context: {
+      previousWasmHash,
+      newWasmHash,
+      detectedAtLedger: params.latestLedger,
+    },
+  };
+}

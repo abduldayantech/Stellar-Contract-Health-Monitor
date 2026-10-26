@@ -122,7 +122,8 @@ Rule body:
 }
 ```
 
-`TTL_EXPIRY` config: `{ "ledgersThreshold": 120960 }`. `INACTIVITY` config: `{ "windowSeconds": 86400 }`.
+`TTL_EXPIRY` config: `{ "ledgersThreshold": 120960 }`. `INACTIVITY` config: `{ "windowSeconds": 86400 }`. `WASM_CHANGED` takes no config
+(`{}` or omit it).
 
 ### Alerts
 

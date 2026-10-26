@@ -4,6 +4,7 @@ import {
   decideLevelTransition,
   describeEventMatch,
   describeTtl,
+  describeWasmChanged,
   evaluateEventMatch,
   evaluateInactivity,
   evaluateTtl,
@@ -238,5 +239,25 @@ describe('descriptions', () => {
     expect(d.title).toBe('transfer / GAGVZM…LQQX on XLM (CDLZFC…CYSC)');
     // Full values stay available in the context for webhook consumers.
     expect(JSON.stringify(d.context)).toContain(addr);
+  });
+});
+
+describe('describeWasmChanged', () => {
+  it('names the contract and both hashes', () => {
+    const d = describeWasmChanged({
+      ruleName: 'Upgrades',
+      contract: { contractId: 'C'.repeat(56), label: 'Token', network: 'MAINNET' },
+      previousWasmHash: 'aa'.repeat(32),
+      newWasmHash: 'bb'.repeat(32),
+      latestLedger: 123,
+    });
+    expect(d.title).toBe('Contract WASM upgraded on Token (CCCCCC…CCCC)');
+    expect(d.message).toContain(`now runs WASM ${'bb'.repeat(32)} (was ${'aa'.repeat(32)})`);
+    expect(d.message).toContain('mainnet');
+    expect(d.context).toEqual({
+      previousWasmHash: 'aa'.repeat(32),
+      newWasmHash: 'bb'.repeat(32),
+      detectedAtLedger: 123,
+    });
   });
 });

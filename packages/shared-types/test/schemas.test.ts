@@ -40,6 +40,10 @@ describe('alert rule schemas', () => {
       cooldownSeconds: 300,
       destinationIds: [],
     });
+    expect(createAlertRuleSchema.parse({ ...base, type: 'WASM_CHANGED' })).toMatchObject({
+      type: 'WASM_CHANGED',
+      config: {},
+    });
   });
 });
 

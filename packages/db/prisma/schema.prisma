@@ -32,6 +32,7 @@ enum AlertRuleType {
   EVENT_MATCH
   TTL_EXPIRY
   INACTIVITY
+  WASM_CHANGED
 }
 
 enum AlertSeverity {

@@ -2,6 +2,7 @@ import { StrKey } from '@stellar/stellar-sdk';
 import pino from 'pino';
 import { createSecretBox, getPrisma } from '@stellar-health/db';
 import type {
+  ContractInfo,
   EventsPage,
   GetEventsParams,
   LedgerEntryTtl,
@@ -29,6 +30,8 @@ export class FakeRpc implements StellarClient {
   };
   events: NormalizedEvent[] = [];
   ttls = new Map<string, LedgerEntryTtl>();
+  /** What getContractInfo returns per contract ID (null when unset). */
+  contractInfos = new Map<string, ContractInfo>();
   calls: GetEventsParams[] = [];
 
   emit(contract: string, ledger: number, topics: string[], at = new Date()): NormalizedEvent {
@@ -86,8 +89,8 @@ export class FakeRpc implements StellarClient {
       oldestLedger: this.health.oldestLedger,
     };
   }
-  async getContractInfo() {
-    return null;
+  async getContractInfo(contractId: string) {
+    return this.contractInfos.get(contractId) ?? null;
   }
   async getLedgerEntryTtls(keys: string[]) {
     return {
