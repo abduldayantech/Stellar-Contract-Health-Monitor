@@ -6,11 +6,12 @@ import {
   discordConfigSchema,
   emailConfigSchema,
   slackConfigSchema,
+  teamsConfigSchema,
   webhookConfigSchema,
   type WebhookPayload,
 } from '@stellar-health/shared-types';
 import { openDestinationConfig } from '@stellar-health/db';
-import { chatMessage, discordMessage, slackMessage } from './chat';
+import { chatMessage, discordMessage, slackMessage, teamsMessage } from './chat';
 import type { WorkerDeps } from './deps';
 import { assertPublicUrl } from './ssrf';
 
@@ -185,6 +186,13 @@ async function sendDiscord(deps: DeliveryDeps, config: unknown, payload: Webhook
   return postJson(deps, parsed.data.webhookUrl, JSON.stringify(message));
 }
 
+async function sendTeams(deps: DeliveryDeps, config: unknown, payload: WebhookPayload) {
+  const parsed = teamsConfigSchema.safeParse(openConfig(deps, config));
+  if (!parsed.success) throw new PermanentDeliveryError('Invalid Teams configuration');
+  const message = teamsMessage(chatMessage(payload, deps.config.PUBLIC_DASHBOARD_URL));
+  return postJson(deps, parsed.data.webhookUrl, JSON.stringify(message));
+}
+
 async function sendEmail(deps: DeliveryDeps, config: unknown, payload: WebhookPayload) {
   if (!deps.mailer)
     throw new PermanentDeliveryError('Email is not configured on this server (SMTP_HOST is empty)');
@@ -240,6 +248,9 @@ export async function deliverNotification(
         break;
       case 'DISCORD':
         responseStatus = await sendDiscord(deps, config, payload);
+        break;
+      case 'TEAMS':
+        responseStatus = await sendTeams(deps, config, payload);
         break;
     }
 

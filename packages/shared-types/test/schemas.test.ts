@@ -81,6 +81,18 @@ describe('destination schemas', () => {
     expect(discord('http://discord.com/api/webhooks/123/abc')).toBe(false);
     expect(discord('https://discord.com.evil.io/api/webhooks/1/a')).toBe(false);
   });
+
+  it('accepts Teams incoming webhook and Workflows URLs', () => {
+    const teams = (webhookUrl: string) =>
+      createDestinationSchema.safeParse({ type: 'TEAMS', name: 't', config: { webhookUrl } })
+        .success;
+    expect(teams('https://contoso.webhook.office.com/webhookb2/abc')).toBe(true);
+    expect(teams('https://prod-12.westus.logic.azure.com:443/workflows/abc/triggers')).toBe(true);
+    expect(teams('https://default1.environment.api.powerplatform.com/powerautomate/x')).toBe(true);
+    expect(teams('https://webhook.office.com.evil.io/x')).toBe(false);
+    expect(teams('https://evilwebhook.office.com/x')).toBe(false);
+    expect(teams('http://contoso.webhook.office.com/x')).toBe(false);
+  });
 });
 
 describe('listEventsQuerySchema', () => {
