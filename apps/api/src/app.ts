@@ -7,6 +7,7 @@ import type { PrismaClient, SecretBox } from '@stellar-health/db';
 import type { ApiConfig } from './config';
 import { authPlugin } from './lib/auth';
 import { errorHandler } from './lib/errors';
+import { REQUEST_ID_HEADER, requestIdFor } from './lib/request-id';
 import type { JobBus } from './lib/jobs';
 import type { ApiMetrics } from './lib/metrics';
 import type { StellarClientFactory } from './lib/stellar';
@@ -42,6 +43,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
             ...(config.NODE_ENV === 'development' ? { transport: { target: 'pino-pretty' } } : {}),
           },
     trustProxy: config.TRUST_PROXY,
+    // Validated in requestIdFor; Fastify would otherwise trust the header verbatim.
+    requestIdHeader: false,
+    genReqId: requestIdFor,
     bodyLimit: 256 * 1024,
   });
 
@@ -62,6 +66,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         undefined,
       );
     }
+  });
+
+  app.addHook('onSend', async (req, reply) => {
+    reply.header(REQUEST_ID_HEADER, req.id);
   });
 
   app.setErrorHandler(errorHandler);
