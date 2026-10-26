@@ -17,7 +17,7 @@
     "@stellar-health/db": "workspace:*",
     "@stellar-health/shared-types": "workspace:*",
     "@stellar-health/stellar-client": "workspace:*",
-    "@stellar/stellar-sdk": "~16.3.1",
+    "@stellar/stellar-sdk": "~17.2.1",
     "bullmq": "^5.58.0",
     "ioredis": "^5.7.0",
     "nodemailer": "^7.0.0",
