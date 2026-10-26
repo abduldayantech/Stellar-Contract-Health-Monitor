@@ -808,7 +808,10 @@ describe('chat destinations', () => {
   });
 
   let seed = 40;
-  async function chatDelivery(type: 'SLACK' | 'DISCORD', config: Record<string, unknown>) {
+  async function chatDelivery(
+    type: 'SLACK' | 'DISCORD' | 'TEAMS',
+    config: Record<string, unknown>,
+  ) {
     const c = await createContract(seed++);
     const d = await prisma.notificationDestination.create({
       data: {
@@ -888,6 +891,20 @@ describe('chat destinations', () => {
       (await prisma.notificationDelivery.findUniqueOrThrow({ where: { id: again.delivery.id } }))
         .status,
     ).toBe('PENDING');
+  });
+
+  it('posts an Adaptive Card to Teams', async () => {
+    const webhookUrl = 'https://contoso.webhook.office.com/webhookb2/abc';
+    const { delivery } = await chatDelivery('TEAMS', { webhookUrl });
+    await expect(
+      deliverNotification(h.deps, delivery.id, { number: 1, isFinalAttempt: false }),
+    ).resolves.toBe('sent');
+    expect(received[0]!.url).toBe(webhookUrl);
+    const body = JSON.parse(received[0]!.body);
+    expect(body.attachments[0].content).toMatchObject({
+      type: 'AdaptiveCard',
+      body: [{ text: '[WARNING] Low <balance>', color: 'Warning' }, {}, { type: 'FactSet' }],
+    });
   });
 
   it('rejects a stored Slack URL on another host', async () => {

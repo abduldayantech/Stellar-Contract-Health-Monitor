@@ -153,6 +153,7 @@ function safeDestinationConfig(
       return { to: config.to };
     case 'SLACK':
     case 'DISCORD':
+    case 'TEAMS':
       return { webhookUrl: maskUrl(config.webhookUrl) };
   }
 }

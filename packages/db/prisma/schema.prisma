@@ -52,6 +52,7 @@ enum DestinationType {
   EMAIL
   SLACK
   DISCORD
+  TEAMS
 }
 
 enum DeliveryStatus {
@@ -204,7 +205,7 @@ model NotificationDestination {
   name       String
   type       DestinationType
   enabled    Boolean                @default(true)
-  /// WEBHOOK: { url, secret, headers? }  EMAIL: { to: string[] }  SLACK | DISCORD: { webhookUrl }
+  /// WEBHOOK: { url, secret, headers? }  EMAIL: { to: string[] }  SLACK | DISCORD | TEAMS: { webhookUrl }
   config     Json
   createdAt  DateTime               @default(now())
   updatedAt  DateTime               @updatedAt

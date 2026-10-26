@@ -45,7 +45,7 @@ export function DestinationsCard({
       const config =
         type === 'WEBHOOK'
           ? { url }
-          : type === 'SLACK' || type === 'DISCORD'
+          : type === 'SLACK' || type === 'DISCORD' || type === 'TEAMS'
             ? { webhookUrl: url }
             : {
                 to: emails
@@ -84,7 +84,7 @@ export function DestinationsCard({
     <Card>
       <CardHeader
         title="Notification destinations"
-        description="Webhooks receive a signed JSON POST for every alert. Slack and Discord post a formatted message to a channel. Email requires SMTP to be configured on the server."
+        description="Webhooks receive a signed JSON POST for every alert. Slack, Discord and Teams post a formatted message to a channel. Email requires SMTP to be configured on the server."
         actions={
           <Button size="sm" variant="secondary" onClick={() => setAdding((a) => !a)}>
             {adding ? 'Cancel' : 'Add destination'}
@@ -107,6 +107,7 @@ export function DestinationsCard({
               <option value="EMAIL">Email</option>
               <option value="SLACK">Slack</option>
               <option value="DISCORD">Discord</option>
+              <option value="TEAMS">Microsoft Teams</option>
             </Select>
           </Field>
           <Field label="Name" htmlFor="d-name">
@@ -138,6 +139,17 @@ export function DestinationsCard({
                 onChange={(e) => setUrl(e.target.value)}
                 required
                 placeholder="https://discord.com/api/webhooks/…"
+              />
+            </Field>
+          ) : type === 'TEAMS' ? (
+            <Field label="Teams webhook URL" htmlFor="d-url">
+              <Input
+                id="d-url"
+                type="url"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                required
+                placeholder="https://….webhook.office.com/… or Workflows URL"
               />
             </Field>
           ) : type === 'WEBHOOK' ? (
@@ -191,7 +203,7 @@ export function DestinationsCard({
       ) : !destinations?.length ? (
         <EmptyState
           title="No destinations"
-          description="Add a Slack or Discord channel, an email address or a webhook URL to receive alerts."
+          description="Add a Slack, Discord or Teams channel, an email address or a webhook URL to receive alerts."
         />
       ) : (
         <ul className="divide-y divide-slate-100 dark:divide-slate-800">
