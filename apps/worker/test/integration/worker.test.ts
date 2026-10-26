@@ -520,7 +520,40 @@ describe('maintenance', () => {
         { ...base, eventId: 'new', ledger: 2, ledgerClosedAt: new Date() },
       ],
     });
-    expect(await pruneOldData(h.deps)).toEqual({ deleted: 1 });
+    expect(await pruneOldData(h.deps)).toEqual({ deleted: 1, auditDeleted: 0 });
     expect((await prisma.event.findMany()).map((e) => e.eventId)).toEqual(['new']);
+  });
+
+  async function seedAuditLog(oldRows: number) {
+    const row = (createdAt: Date, i: number) => ({
+      createdAt,
+      actorType: 'admin',
+      actorId: 'admin',
+      actorName: 'Admin',
+      method: 'POST',
+      route: '/contracts',
+      path: `/contracts/${i}`,
+      statusCode: 201,
+    });
+    await prisma.auditLog.createMany({
+      data: [
+        ...Array.from({ length: oldRows }, (_, i) => row(past(400 * 86400_000), i)),
+        row(past(10 * 86400_000), 999),
+      ],
+    });
+  }
+
+  it('prunes audit log rows past their retention in batches', async () => {
+    await seedAuditLog(7);
+    // Batches of 3: 3 + 3 + 1 rows.
+    expect(await pruneOldData(h.deps, 3)).toMatchObject({ auditDeleted: 7 });
+    expect((await prisma.auditLog.findMany()).map((r) => r.path)).toEqual(['/contracts/999']);
+  });
+
+  it('keeps the audit log forever when the retention is 0', async () => {
+    h = createHarness({ AUDIT_LOG_RETENTION_DAYS: '0' });
+    await seedAuditLog(2);
+    expect(await pruneOldData(h.deps)).toMatchObject({ auditDeleted: 0 });
+    expect(await prisma.auditLog.count()).toBe(3);
   });
 });
