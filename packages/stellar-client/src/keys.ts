@@ -1,4 +1,5 @@
 import { Address, nativeToScVal, xdr } from '@stellar/stellar-sdk';
+import type { ExtendTarget } from '@stellar-health/shared-types';
 
 export type StorageKeyType = 'symbol' | 'enum_variant' | 'xdr';
 export type Durability = 'PERSISTENT' | 'TEMPORARY';
@@ -55,4 +56,38 @@ export function contractCodeLedgerKey(wasmHashHex: string): xdr.LedgerKey {
 
 export function ledgerKeyToXdr(key: xdr.LedgerKey): string {
   return key.toXDR('base64');
+}
+
+/**
+ * Describes a monitored ledger key the way `stellar contract extend` takes it.
+ * Returns null for keys that are not contract data or code.
+ */
+export function extendTargetForLedgerKey(ledgerKeyXdr: string): ExtendTarget | null {
+  let key: xdr.LedgerKey;
+  try {
+    key = xdr.LedgerKey.fromXDR(ledgerKeyXdr, 'base64');
+  } catch {
+    return null;
+  }
+  switch (key.switch()) {
+    case xdr.LedgerEntryType.contractCode():
+      return { kind: 'code', wasmHash: key.contractCode().hash().toString('hex') };
+    case xdr.LedgerEntryType.contractData(): {
+      const data = key.contractData();
+      const scKey = data.key();
+      if (scKey.switch() === xdr.ScValType.scvLedgerKeyContractInstance())
+        return { kind: 'instance' };
+      return {
+        kind: 'data',
+        durability:
+          data.durability() === xdr.ContractDataDurability.temporary() ? 'temporary' : 'persistent',
+        key:
+          scKey.switch() === xdr.ScValType.scvSymbol()
+            ? { symbol: scKey.sym().toString() }
+            : { xdr: scKey.toXDR('base64') },
+      };
+    }
+    default:
+      return null;
+  }
 }

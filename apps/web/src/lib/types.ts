@@ -1,3 +1,5 @@
+import type { ExtendTarget } from '@stellar-health/shared-types/extend-command';
+
 import type { ContractHealth } from '@stellar-health/ui';
 
 export type Network = 'TESTNET' | 'MAINNET' | 'FUTURENET' | 'LOCAL';
@@ -37,6 +39,8 @@ export interface StorageEntry {
   estimatedExpiry: string | null;
   lastCheckedAt: string | null;
   lastError: string | null;
+  /** How to pass this entry to `stellar contract extend`; null for unknown key types. */
+  extend: ExtendTarget | null;
 }
 
 export interface AlertRule {

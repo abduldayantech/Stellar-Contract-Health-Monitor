@@ -88,6 +88,11 @@ Pass `cursor=<nextCursor>` to get the next page; `limit` is 1–200 (default 50)
 | POST   | `/contracts/:id/storage-entries`          | `{label, durability: PERSISTENT\|TEMPORARY, keyType: symbol\|enum_variant\|xdr, key}` |
 | DELETE | `/contracts/:id/storage-entries/:entryId` | Stop monitoring a storage key                                                         |
 
+Each storage entry in `GET /contracts/:id` has an `extend` field describing how to pass it to
+`stellar contract extend`: `{kind: "instance"}`, `{kind: "code", wasmHash}` or
+`{kind: "data", durability, key: {symbol} | {xdr}}`. The dashboard turns it into a copyable
+command, and TTL alerts include the same command for entries that are still live.
+
 ### Events
 
 | Method | Path             | Description                                                                               |

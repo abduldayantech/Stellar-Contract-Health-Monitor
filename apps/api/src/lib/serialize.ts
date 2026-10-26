@@ -8,6 +8,7 @@ import type {
   StorageEntry,
 } from '@stellar-health/db';
 import { AVG_LEDGER_SECONDS } from '@stellar-health/shared-types';
+import { extendTargetForLedgerKey } from '@stellar-health/stellar-client';
 
 export function serializeContract(
   c: Contract,
@@ -83,6 +84,8 @@ export function serializeStorageEntry(s: StorageEntry, latestLedger: number | nu
     lastCheckedLedger: s.lastCheckedLedger,
     lastCheckedAt: s.lastCheckedAt,
     lastError: s.lastError,
+    /** How to pass this entry to `stellar contract extend`. */
+    extend: extendTargetForLedgerKey(s.ledgerKeyXdr),
   };
 }
 

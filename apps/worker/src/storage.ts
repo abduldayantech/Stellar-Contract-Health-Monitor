@@ -5,7 +5,12 @@ import {
   isCoolingDown,
   ttlSeverity,
 } from '@stellar-health/alert-engine';
-import { ttlExpiryConfigSchema, type Network } from '@stellar-health/shared-types';
+import {
+  extendTtlCommand,
+  ttlExpiryConfigSchema,
+  type Network,
+} from '@stellar-health/shared-types';
+import { extendTargetForLedgerKey } from '@stellar-health/stellar-client';
 import { activeRulesFor, openAlertFor, resolveLevelAlert, triggerAlert } from './alerts';
 import type { WorkerDeps } from './deps';
 
@@ -62,6 +67,13 @@ export async function checkStorage(deps: WorkerDeps, contractRefId: string) {
     };
   });
 
+  const extendCommands: Record<string, string> = {};
+  for (const s of contract.storageEntries) {
+    const target = extendTargetForLedgerKey(s.ledgerKeyXdr);
+    if (target)
+      extendCommands[s.id] = extendTtlCommand({ contractId: contract.contractId, network, target });
+  }
+
   const rules = await activeRulesFor(deps, contract.id, 'TTL_EXPIRY');
   for (const rule of rules) {
     try {
@@ -85,6 +97,7 @@ export async function checkStorage(deps: WorkerDeps, contractRefId: string) {
             breaches,
             latestLedger,
             ledgersThreshold: config.ledgersThreshold,
+            extendCommands,
           }),
         });
       } else if (transition === 'resolve' && openAlertId) {
