@@ -539,7 +539,7 @@ describe('chat destinations', () => {
 
   let seed = 40;
   async function chatDelivery(
-    type: 'SLACK' | 'DISCORD' | 'TEAMS',
+    type: 'SLACK' | 'DISCORD' | 'TEAMS' | 'TELEGRAM',
     config: Record<string, unknown>,
   ) {
     const c = await createContract(seed++);
@@ -635,6 +635,22 @@ describe('chat destinations', () => {
       type: 'AdaptiveCard',
       body: [{ text: '[WARNING] Low <balance>', color: 'Warning' }, {}, { type: 'FactSet' }],
     });
+  });
+
+  it('sends Telegram messages with the encrypted bot token', async () => {
+    const botToken = '123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw';
+    const { delivery, destination } = await chatDelivery('TELEGRAM', {
+      botToken,
+      chatId: '-1001234567890',
+    });
+    expect(JSON.stringify(destination.config)).not.toContain(botToken);
+    await expect(
+      deliverNotification(h.deps, delivery.id, { number: 1, isFinalAttempt: false }),
+    ).resolves.toBe('sent');
+    expect(received[0]!.url).toBe(`https://api.telegram.org/bot${botToken}/sendMessage`);
+    const body = JSON.parse(received[0]!.body);
+    expect(body).toMatchObject({ chat_id: '-1001234567890', parse_mode: 'HTML' });
+    expect(body.text).toContain('<b>[WARNING] Low &lt;balance&gt;</b>');
   });
 
   it('rejects a stored Slack URL on another host', async () => {
