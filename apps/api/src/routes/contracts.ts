@@ -215,7 +215,7 @@ export async function contractRoutes(app: FastifyInstance, deps: AppDeps) {
       }),
     ]);
     const latest = ledgers.get(c.network as Network) ?? null;
-    const entries = c.storageEntries.map((s) => serializeStorageEntry(s, latest));
+    const entries = c.storageEntries.map((s) => serializeStorageEntry(s, latest, c.wasmHash));
     const remaining = entries.map((e) => e.ledgersRemaining).filter((r): r is number => r !== null);
     return {
       ...serializeContract(c, {

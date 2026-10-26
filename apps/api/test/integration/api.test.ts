@@ -297,7 +297,7 @@ describe('contract registry', () => {
       'CODE',
     ]);
     expect(detail.storageEntries[0].extend).toEqual({ kind: 'instance' });
-    expect(detail.storageEntries[1].extend).toMatchObject({ kind: 'code' });
+    expect(detail.storageEntries[1].extend).toEqual({ kind: 'code', wasmHash: 'ab'.repeat(32) });
     expect(detail.nearestExpiryLedgers).toBe(50_000);
     expect(detail.health).toBe('pending');
 

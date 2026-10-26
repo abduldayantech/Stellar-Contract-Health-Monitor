@@ -7,7 +7,7 @@ import type {
   NotificationDestination,
   StorageEntry,
 } from '@stellar-health/db';
-import { AVG_LEDGER_SECONDS } from '@stellar-health/shared-types';
+import { AVG_LEDGER_SECONDS, type ExtendTarget } from '@stellar-health/shared-types';
 import { extendTargetForLedgerKey } from '@stellar-health/stellar-client';
 
 export function serializeContract(
@@ -66,7 +66,20 @@ export function contractHealth(
   return 'healthy';
 }
 
-export function serializeStorageEntry(s: StorageEntry, latestLedger: number | null) {
+/** Decodes the stored key; falls back on the entry kind when the key can't be decoded. */
+function extendTarget(s: StorageEntry, wasmHash: string | null): ExtendTarget | null {
+  const decoded = extendTargetForLedgerKey(s.ledgerKeyXdr);
+  if (decoded) return decoded;
+  if (s.kind === 'INSTANCE') return { kind: 'instance' };
+  if (s.kind === 'CODE' && wasmHash) return { kind: 'code', wasmHash };
+  return null;
+}
+
+export function serializeStorageEntry(
+  s: StorageEntry,
+  latestLedger: number | null,
+  wasmHash: string | null = null,
+) {
   const remaining =
     s.liveUntilLedger !== null && latestLedger ? s.liveUntilLedger - latestLedger : null;
   return {
@@ -85,7 +98,7 @@ export function serializeStorageEntry(s: StorageEntry, latestLedger: number | nu
     lastCheckedAt: s.lastCheckedAt,
     lastError: s.lastError,
     /** How to pass this entry to `stellar contract extend`. */
-    extend: extendTargetForLedgerKey(s.ledgerKeyXdr),
+    extend: extendTarget(s, wasmHash),
   };
 }
 
