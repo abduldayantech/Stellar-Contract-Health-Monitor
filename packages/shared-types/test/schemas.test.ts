@@ -84,6 +84,17 @@ describe('destination schemas', () => {
     expect(slack('https://hooks.slack.com.evil.com/x')).toBe(false);
     expect(slack('https://example.com/services/x')).toBe(false);
   });
+
+  it('accepts Discord channel webhook URLs only', () => {
+    const discord = (webhookUrl: string) =>
+      createDestinationSchema.safeParse({ type: 'DISCORD', name: 'd', config: { webhookUrl } })
+        .success;
+    expect(discord('https://discord.com/api/webhooks/123/abc')).toBe(true);
+    expect(discord('https://discordapp.com/api/webhooks/123/abc')).toBe(true);
+    expect(discord('https://discord.com/channels/123')).toBe(false);
+    expect(discord('http://discord.com/api/webhooks/123/abc')).toBe(false);
+    expect(discord('https://discord.com.evil.io/api/webhooks/1/a')).toBe(false);
+  });
 });
 
 describe('listEventsQuerySchema', () => {

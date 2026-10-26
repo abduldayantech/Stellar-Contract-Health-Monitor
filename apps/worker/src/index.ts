@@ -4,6 +4,7 @@ import { Redis } from 'ioredis';
 import pino from 'pino';
 import { createSecretBox, disconnectPrisma, getPrisma, type Prisma } from '@stellar-health/db';
 import {
+  DELIVERY_BACKOFF,
   QUEUES,
   type IngestJobData,
   type NotificationJobData,
@@ -11,7 +12,12 @@ import {
   type StorageJobData,
 } from '@stellar-health/shared-types';
 import { loadConfig } from './config';
-import { deliverNotification, PermanentDeliveryError, type DeliveryDeps } from './delivery';
+import {
+  deliverNotification,
+  deliveryBackoff,
+  PermanentDeliveryError,
+  type DeliveryDeps,
+} from './delivery';
 import type { WorkerDeps } from './deps';
 import { checkInactivity } from './inactivity';
 import { ingestBatch, ingestContract } from './ingest';
@@ -57,7 +63,7 @@ async function main() {
         {
           jobId: `delivery-${deliveryId}`,
           attempts: config.WEBHOOK_MAX_ATTEMPTS,
-          backoff: { type: 'exponential', delay: 10_000 },
+          backoff: DELIVERY_BACKOFF,
           removeOnComplete: 1000,
           removeOnFail: 1000,
         },
@@ -186,7 +192,11 @@ async function main() {
           throw err;
         }
       },
-      { connection, concurrency: config.NOTIFICATION_CONCURRENCY },
+      {
+        connection,
+        concurrency: config.NOTIFICATION_CONCURRENCY,
+        settings: { backoffStrategy: deliveryBackoff },
+      },
     ),
   ];
   for (const w of workers) {

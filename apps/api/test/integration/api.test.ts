@@ -649,6 +649,21 @@ describe('alert rules, destinations and alert history', () => {
     expect(bad.statusCode).toBe(400);
   });
 
+  it('creates Discord destinations with the URL masked', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/destinations',
+      headers: auth,
+      payload: {
+        type: 'DISCORD',
+        name: 'Community',
+        config: { webhookUrl: 'https://discord.com/api/webhooks/1/secrettoken' },
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().config).toEqual({ webhookUrl: 'https://discord.com/…oken' });
+  });
+
   async function webhook() {
     const res = await ctx.app.inject({
       method: 'POST',

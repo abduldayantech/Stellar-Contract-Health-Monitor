@@ -3,13 +3,14 @@ import {
   WEBHOOK_DELIVERY_HEADER,
   WEBHOOK_SIGNATURE_HEADER,
   WEBHOOK_TIMESTAMP_HEADER,
+  discordConfigSchema,
   emailConfigSchema,
   slackConfigSchema,
   webhookConfigSchema,
   type WebhookPayload,
 } from '@stellar-health/shared-types';
 import { openDestinationConfig } from '@stellar-health/db';
-import { chatMessage, slackMessage } from './chat';
+import { chatMessage, discordMessage, slackMessage } from './chat';
 import type { WorkerDeps } from './deps';
 import { recordDestinationFailure, recordDestinationSuccess } from './destination-health';
 import { assertPublicUrl } from './ssrf';
@@ -112,9 +113,41 @@ async function postJson(
   const msg = `Destination responded ${res.status}${text ? `: ${text}` : ''}`;
   // 408/429 and 5xx are worth retrying; other 4xx (and redirects) won't fix themselves.
   if (res.status === 408 || res.status === 429 || res.status >= 500) {
-    throw Object.assign(new Error(msg), { responseStatus: res.status });
+    throw Object.assign(new Error(msg), {
+      responseStatus: res.status,
+      retryAfterMs: retryAfterMs(res.headers.get('retry-after'), text),
+    });
   }
   throw Object.assign(new PermanentDeliveryError(msg), { responseStatus: res.status });
+}
+
+/**
+ * How long the destination asked us to wait, from a `Retry-After` header (seconds) or a
+ * Discord-style JSON body (`{"retry_after": 1.5}`, seconds).
+ */
+export function retryAfterMs(header: string | null, body: string): number | undefined {
+  const seconds = Number(header);
+  if (header && Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds * 1000);
+  try {
+    const parsed = JSON.parse(body) as { retry_after?: unknown };
+    if (typeof parsed.retry_after === 'number' && parsed.retry_after >= 0)
+      return Math.ceil(parsed.retry_after * 1000);
+  } catch {
+    // Not JSON; no hint.
+  }
+  return undefined;
+}
+
+const MAX_BACKOFF_MS = 3600_000;
+
+/**
+ * BullMQ backoff for notification jobs (`DELIVERY_BACKOFF`): 10s, 20s, 40s… capped at an hour,
+ * but never sooner than the destination's Retry-After.
+ */
+export function deliveryBackoff(attemptsMade: number, _type?: string, err?: Error): number {
+  const exponential = 10_000 * 2 ** Math.max(0, attemptsMade - 1);
+  const hint = (err as { retryAfterMs?: number } | undefined)?.retryAfterMs ?? 0;
+  return Math.min(Math.max(exponential, hint), MAX_BACKOFF_MS);
 }
 
 async function sendWebhook(deps: DeliveryDeps, config: unknown, payload: WebhookPayload) {
@@ -143,6 +176,13 @@ async function sendSlack(deps: DeliveryDeps, config: unknown, payload: WebhookPa
   const parsed = slackConfigSchema.safeParse(openConfig(deps, config));
   if (!parsed.success) throw new PermanentDeliveryError('Invalid Slack configuration');
   const message = slackMessage(chatMessage(payload, deps.config.PUBLIC_DASHBOARD_URL));
+  return postJson(deps, parsed.data.webhookUrl, JSON.stringify(message));
+}
+
+async function sendDiscord(deps: DeliveryDeps, config: unknown, payload: WebhookPayload) {
+  const parsed = discordConfigSchema.safeParse(openConfig(deps, config));
+  if (!parsed.success) throw new PermanentDeliveryError('Invalid Discord configuration');
+  const message = discordMessage(chatMessage(payload, deps.config.PUBLIC_DASHBOARD_URL));
   return postJson(deps, parsed.data.webhookUrl, JSON.stringify(message));
 }
 
@@ -198,6 +238,9 @@ export async function deliverNotification(
         break;
       case 'SLACK':
         responseStatus = await sendSlack(deps, config, payload);
+        break;
+      case 'DISCORD':
+        responseStatus = await sendDiscord(deps, config, payload);
         break;
     }
 

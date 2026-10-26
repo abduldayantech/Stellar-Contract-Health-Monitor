@@ -1,6 +1,7 @@
 import { Queue } from 'bullmq';
 import type { Redis } from 'ioredis';
 import {
+  DELIVERY_BACKOFF,
   QUEUES,
   type IngestJobData,
   type NotificationJobData,
@@ -45,7 +46,7 @@ export function createJobBus(connection: Redis, maxAttempts = 6): JobBus {
         {
           jobId: `delivery-${deliveryId}-${Date.now()}`,
           attempts: maxAttempts,
-          backoff: { type: 'exponential', delay: 10_000 },
+          backoff: DELIVERY_BACKOFF,
           removeOnComplete: 1000,
           removeOnFail: 1000,
         },

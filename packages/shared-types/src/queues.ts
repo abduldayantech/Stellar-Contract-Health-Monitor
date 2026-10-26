@@ -17,4 +17,10 @@ export interface NotificationJobData {
   deliveryId: string;
 }
 
+/**
+ * Retry policy for notification jobs. The worker registers a custom backoff strategy for this
+ * type: exponential from 10s, but never sooner than a destination's `Retry-After`.
+ */
+export const DELIVERY_BACKOFF = { type: 'delivery', delay: 10_000 } as const;
+
 export type SchedulerJobName = 'tick-ingest' | 'tick-storage' | 'tick-inactivity' | 'prune-events';
