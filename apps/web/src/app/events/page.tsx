@@ -5,6 +5,7 @@ import { Suspense, useEffect, useState, type FormEvent } from 'react';
 import useSWRInfinite from 'swr/infinite';
 import { Alert, Button, Card, EmptyState, Field, Input, Select, Spinner } from '@stellar-health/ui';
 import { PageHeader } from '@/components/app-shell';
+import { ExportLinks } from '@/components/export-links';
 import { EventTable } from '@/components/event-table';
 import { api, errorMessage, qs, useApi } from '@/lib/api';
 import type { Contract, EventItem, Page } from '@/lib/types';
@@ -78,6 +79,7 @@ function EventsExplorer() {
       <PageHeader
         title="Events"
         description="Contract events stored by the monitor. Click a row for details, or a topic to filter by it."
+        actions={<ExportLinks query={query} />}
       />
       <Card className="p-4">
         <form

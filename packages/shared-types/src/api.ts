@@ -64,6 +64,11 @@ export const listEventsQuerySchema = z.object({
   cursor: z.string().optional(),
 });
 
+/** The events list filters, without paging, plus the file format. */
+export const exportEventsQuerySchema = listEventsQuerySchema
+  .omit({ limit: true, cursor: true })
+  .extend({ format: z.enum(['csv', 'ndjson']).default('csv') });
+
 const baseRuleSchema = z.object({
   name: z.string().trim().min(1).max(120),
   contractRefId: z.string().nullable().optional(),

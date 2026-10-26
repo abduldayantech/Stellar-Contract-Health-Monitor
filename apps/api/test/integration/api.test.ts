@@ -451,6 +451,53 @@ describe('events', () => {
     ]);
   });
 
+  it('exports filtered events as CSV and NDJSON, including for viewers', async () => {
+    const c = await register(14);
+    await seedEvents(c.id, 6, { topic: 'transfer' });
+    const other = await register(15);
+    await seedEvents(other.id, 3, { topic: 'mint', startLedger: 95_000 });
+    await ctx.prisma.event.updateMany({
+      where: { contractRefId: c.id, ledger: 90_000 },
+      data: { topics: ['transfer', 'a,"quoted"\nvalue'] },
+    });
+    const viewer = await ctx.app.inject({
+      method: 'POST',
+      url: '/settings/tokens',
+      headers: auth,
+      payload: { name: 'viewer', role: 'VIEWER' },
+    });
+    const asViewer = { authorization: `Bearer ${viewer.json().token}` };
+
+    const csv = await ctx.app.inject({
+      url: `/events/export?format=csv&contractRefId=${c.id}`,
+      headers: asViewer,
+    });
+    expect(csv.statusCode).toBe(200);
+    expect(csv.headers['content-type']).toContain('text/csv');
+    expect(csv.headers['content-disposition']).toMatch(/attachment; filename="events-.*\.csv"/);
+    const lines = csv.body.trimEnd().split('\r\n');
+    expect(lines[0]).toBe('ledger,ledgerClosedAt,contractId,txHash,type,eventId,topics,value');
+    expect(lines).toHaveLength(7);
+    expect(lines[1]!.startsWith('90005,')).toBe(true);
+    expect(csv.body).toContain('"transfer / a,""quoted""\nvalue"');
+
+    const ndjson = await ctx.app.inject({
+      url: '/events/export?format=ndjson&topic=mint',
+      headers: auth,
+    });
+    expect(ndjson.headers['content-type']).toContain('application/x-ndjson');
+    const rows = ndjson.body
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l));
+    expect(rows).toHaveLength(3);
+    expect(rows.every((r: { topics: string[] }) => r.topics[0] === 'mint')).toBe(true);
+    expect(rows[0]).toMatchObject({ contractId: other.contractId, ledger: 95_002 });
+
+    const bad = await ctx.app.inject({ url: '/events/export?format=xml', headers: auth });
+    expect(bad.statusCode).toBe(400);
+  });
+
   it('returns hourly activity for a contract', async () => {
     const c = await register(13);
     await seedEvents(c.id, 6);

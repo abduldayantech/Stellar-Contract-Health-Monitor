@@ -40,12 +40,14 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
       { status: 502 },
     );
   }
-  const payload = res.status === 204 ? null : await res.arrayBuffer();
-  return new NextResponse(payload, {
+  // Stream the body through so large downloads (event exports) are not buffered in memory.
+  const disposition = res.headers.get('content-disposition');
+  return new NextResponse(res.status === 204 ? null : res.body, {
     status: res.status,
     headers: {
       'content-type': res.headers.get('content-type') ?? 'application/json',
       'cache-control': 'no-store',
+      ...(disposition ? { 'content-disposition': disposition } : {}),
     },
   });
 }
