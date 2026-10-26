@@ -1,30 +1,30 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {
-  openWebhookConfig,
-  sealWebhookConfig,
+  openDestinationConfig,
+  sealDestinationConfig,
   type NotificationDestination,
   type Prisma,
 } from '@stellar-health/db';
 import { generateWebhookSecret } from '@stellar-health/alert-engine';
 import {
   createDestinationSchema,
-  emailConfigSchema,
+  destinationConfigSchemas,
   updateDestinationSchema,
-  webhookConfigSchema,
 } from '@stellar-health/shared-types';
 import { notFound } from '../lib/errors';
 import { serializeDelivery, serializeDestination } from '../lib/serialize';
 import type { AppDeps } from '../app';
 
 export async function destinationRoutes(app: FastifyInstance, { prisma, jobs, secrets }: AppDeps) {
-  // Webhook secrets and header values are encrypted at rest; decrypt only to build responses.
-  const plain = (d: NotificationDestination) =>
-    d.type === 'WEBHOOK'
-      ? { ...d, config: openWebhookConfig(secrets, d.config) as Prisma.JsonValue }
-      : d;
-  const sealed = (type: string, config: unknown) =>
-    (type === 'WEBHOOK' ? sealWebhookConfig(secrets, config) : config) as Prisma.InputJsonValue;
+  // Credentials (webhook secrets and headers, chat webhook URLs, bot tokens) are encrypted
+  // at rest; decrypt only to build responses.
+  const plain = (d: NotificationDestination) => ({
+    ...d,
+    config: openDestinationConfig(secrets, d.config) as Prisma.JsonValue,
+  });
+  const sealed = (config: unknown) =>
+    sealDestinationConfig(secrets, config) as Prisma.InputJsonValue;
   const view = (d: NotificationDestination, opts?: { revealSecret?: boolean }) =>
     serializeDestination(plain(d), opts);
 
@@ -56,7 +56,7 @@ export async function destinationRoutes(app: FastifyInstance, { prisma, jobs, se
         name: body.name,
         type: body.type,
         enabled: body.enabled,
-        config: sealed(body.type, config),
+        config: sealed(config),
       },
     });
     reply.status(201);
@@ -72,17 +72,10 @@ export async function destinationRoutes(app: FastifyInstance, { prisma, jobs, se
     let config: Prisma.InputJsonValue | undefined;
     if (body.config) {
       const current = plain(existing).config as Record<string, unknown>;
-      config =
-        existing.type === 'WEBHOOK'
-          ? sealed(
-              'WEBHOOK',
-              webhookConfigSchema.parse({
-                ...current,
-                ...body.config,
-                secret: body.config.secret ?? current.secret,
-              }),
-            )
-          : (emailConfigSchema.parse(body.config) as Prisma.InputJsonValue);
+      // Fields left out of the update keep their stored values (e.g. the webhook secret).
+      const merged = { ...current, ...body.config };
+      if (existing.type === 'WEBHOOK') merged.secret = body.config.secret ?? current.secret;
+      config = sealed(destinationConfigSchemas[existing.type].parse(merged));
     }
     const d = await prisma.notificationDestination.update({
       where: { id },
@@ -98,8 +91,8 @@ export async function destinationRoutes(app: FastifyInstance, { prisma, jobs, se
     const d = await prisma.notificationDestination.update({
       where: { id },
       data: {
-        config: sealed('WEBHOOK', {
-          ...openWebhookConfig(secrets, existing.config),
+        config: sealed({
+          ...openDestinationConfig(secrets, existing.config),
           secret: generateWebhookSecret(),
         }),
       },

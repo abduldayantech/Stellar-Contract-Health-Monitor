@@ -60,6 +60,16 @@ describe('destination schemas', () => {
     expect(email([])).toBe(false);
     expect(email(['nope'])).toBe(false);
   });
+
+  it('accepts Slack incoming webhook URLs on hooks.slack.com over https only', () => {
+    const slack = (webhookUrl: string) =>
+      createDestinationSchema.safeParse({ type: 'SLACK', name: 's', config: { webhookUrl } })
+        .success;
+    expect(slack('https://hooks.slack.com/services/T0/B0/abc')).toBe(true);
+    expect(slack('http://hooks.slack.com/services/T0/B0/abc')).toBe(false);
+    expect(slack('https://hooks.slack.com.evil.com/x')).toBe(false);
+    expect(slack('https://example.com/services/x')).toBe(false);
+  });
 });
 
 describe('listEventsQuerySchema', () => {

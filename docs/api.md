@@ -98,15 +98,15 @@ Pass `cursor=<nextCursor>` to get the next page; `limit` is 1–200 (default 50)
 
 ### Alert rules and destinations
 
-| Method               | Path                              | Description                                                            |
-| -------------------- | --------------------------------- | ---------------------------------------------------------------------- |
-| GET / POST           | `/alert-rules`                    | List (`?contractRefId`) / create                                       |
-| GET / PATCH / DELETE | `/alert-rules/:id`                | Read / update / delete                                                 |
-| GET / POST           | `/destinations`                   | List with 7-day delivery stats / create (webhook secret returned once) |
-| PATCH / DELETE       | `/destinations/:id`               | Update / delete                                                        |
-| POST                 | `/destinations/:id/rotate-secret` | New webhook secret (returned once)                                     |
-| POST                 | `/destinations/:id/test`          | Queue a test notification                                              |
-| GET                  | `/destinations/:id/deliveries`    | Last 50 deliveries                                                     |
+| Method               | Path                              | Description                                                                                                           |
+| -------------------- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| GET / POST           | `/alert-rules`                    | List (`?contractRefId`) / create                                                                                      |
+| GET / PATCH / DELETE | `/alert-rules/:id`                | Read / update / delete                                                                                                |
+| GET / POST           | `/destinations`                   | List with 7-day delivery stats / create (webhook secret returned once); types in [notifications.md](notifications.md) |
+| PATCH / DELETE       | `/destinations/:id`               | Update / delete                                                                                                       |
+| POST                 | `/destinations/:id/rotate-secret` | New webhook secret (returned once)                                                                                    |
+| POST                 | `/destinations/:id/test`          | Queue a test notification                                                                                             |
+| GET                  | `/destinations/:id/deliveries`    | Last 50 deliveries                                                                                                    |
 
 Rule body:
 

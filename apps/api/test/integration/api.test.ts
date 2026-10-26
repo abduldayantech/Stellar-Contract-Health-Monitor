@@ -463,6 +463,37 @@ describe('events', () => {
 });
 
 describe('alert rules, destinations and alert history', () => {
+  it('creates Slack destinations with the URL encrypted and masked', async () => {
+    const webhookUrl = 'https://hooks.slack.com/services/T000/B000/abcdefghij';
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/destinations',
+      headers: auth,
+      payload: { type: 'SLACK', name: 'Ops channel', config: { webhookUrl } },
+    });
+    expect(res.statusCode).toBe(201);
+    const d = res.json();
+    expect(d.config).toEqual({ webhookUrl: 'https://hooks.slack.com/…ghij' });
+    const row = await ctx.prisma.notificationDestination.findUniqueOrThrow({ where: { id: d.id } });
+    expect(JSON.stringify(row.config)).not.toContain('hooks.slack.com');
+
+    const moved = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/destinations/${d.id}`,
+      headers: auth,
+      payload: { config: { webhookUrl: 'https://example.com/x' } },
+    });
+    expect(moved.statusCode).toBe(400);
+
+    const bad = await ctx.app.inject({
+      method: 'POST',
+      url: '/destinations',
+      headers: auth,
+      payload: { type: 'SLACK', name: 'x', config: { webhookUrl: 'https://example.com/hook' } },
+    });
+    expect(bad.statusCode).toBe(400);
+  });
+
   async function webhook() {
     const res = await ctx.app.inject({
       method: 'POST',

@@ -111,19 +111,41 @@ function maskSecret(secret: unknown): string | null {
   return `${secret.slice(0, 6)}…${secret.slice(-4)}`;
 }
 
+/** Shows enough of a credential-bearing URL to recognise it, e.g. `https://hooks.slack.com/…a1b2`. */
+export function maskUrl(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length === 0) return null;
+  try {
+    return `${new URL(value).origin}/…${value.slice(-4)}`;
+  } catch {
+    return `…${value.slice(-4)}`;
+  }
+}
+
+function safeDestinationConfig(
+  type: NotificationDestination['type'],
+  config: Record<string, unknown>,
+  opts: { revealSecret?: boolean },
+) {
+  switch (type) {
+    case 'WEBHOOK':
+      return {
+        url: config.url,
+        headers: config.headers ? Object.keys(config.headers as object) : [],
+        secret: opts.revealSecret ? config.secret : maskSecret(config.secret),
+      };
+    case 'EMAIL':
+      return { to: config.to };
+    case 'SLACK':
+      return { webhookUrl: maskUrl(config.webhookUrl) };
+  }
+}
+
 export function serializeDestination(
   d: NotificationDestination,
   opts: { revealSecret?: boolean } = {},
 ) {
   const config = (d.config ?? {}) as Record<string, unknown>;
-  const safeConfig =
-    d.type === 'WEBHOOK'
-      ? {
-          url: config.url,
-          headers: config.headers ? Object.keys(config.headers as object) : [],
-          secret: opts.revealSecret ? config.secret : maskSecret(config.secret),
-        }
-      : { to: config.to };
+  const safeConfig = safeDestinationConfig(d.type, config, opts);
   return {
     id: d.id,
     name: d.name,
