@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { disconnectPrisma } from '@stellar-health/db';
 import { resetDatabase } from '../../../../tests/support/test-db';
 import { ADMIN_TOKEN, auth, contractId, createTestApp, type TestContext } from './helpers';
@@ -120,6 +120,48 @@ describe('status and auth', () => {
     ).toBe(401);
   });
 
+  it('rejects tokens past their expiry date', async () => {
+    const created = await ctx.app.inject({
+      method: 'POST',
+      url: '/settings/tokens',
+      headers: auth,
+      payload: { name: 'Contractor', role: 'VIEWER', expiresInDays: 7 },
+    });
+    expect(created.statusCode).toBe(201);
+    const { token, id, expiresAt } = created.json();
+    const days = (new Date(expiresAt).getTime() - Date.now()) / 86400_000;
+    expect(days).toBeGreaterThan(6.9);
+    expect(days).toBeLessThanOrEqual(7);
+    const bearer = { authorization: `Bearer ${token}` };
+    expect((await ctx.app.inject({ url: '/auth/me', headers: bearer })).statusCode).toBe(200);
+
+    await ctx.prisma.apiToken.update({
+      where: { id },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+    const expired = await ctx.app.inject({ url: '/auth/me', headers: bearer });
+    expect(expired.statusCode).toBe(401);
+    expect(expired.json().error).toMatchObject({ code: 'TOKEN_EXPIRED', message: 'Token expired' });
+
+    const list = (await ctx.app.inject({ url: '/settings/tokens', headers: auth })).json();
+    expect(list.items.find((t: { id: string }) => t.id === id).expiresAt).toBeTruthy();
+
+    const neverExpires = await ctx.app.inject({
+      method: 'POST',
+      url: '/settings/tokens',
+      headers: auth,
+      payload: { name: 'Forever', role: 'VIEWER' },
+    });
+    expect(neverExpires.json().expiresAt).toBeNull();
+    const tooLong = await ctx.app.inject({
+      method: 'POST',
+      url: '/settings/tokens',
+      headers: auth,
+      payload: { name: 'x', expiresInDays: 0 },
+    });
+    expect(tooLong.statusCode).toBe(400);
+  });
+
   it('accepts empty JSON bodies on action endpoints and rejects malformed JSON', async () => {
     const c = await register();
     const json = { ...auth, 'content-type': 'application/json' };
@@ -233,15 +275,18 @@ describe('roles and audit log', () => {
     await ctx.app.inject({ method: 'DELETE', url: `/contracts/${c.id}`, headers: viewer });
     await ctx.app.inject({ url: '/contracts', headers: auth }); // reads are not audited
 
-    const log = (await ctx.app.inject({ url: '/audit-log?limit=10', headers: auth })).json();
-    const rows = log.items.map(
-      (r: { method: string; route: string; statusCode: number; actorName: string }) =>
-        [r.method, r.route, r.statusCode, r.actorName].join(' '),
-    );
-    expect(rows[0]).toBe('DELETE /contracts/:id 403 VIEWER token');
-    expect(rows[1]).toBe('PATCH /contracts/:id 200 Admin (bootstrap token)');
-    expect(rows.some((r: string) => r.startsWith('GET'))).toBe(false);
-    expect(log.items[0].path).toBe(`/contracts/${c.id}`);
+    // Audit rows are written after the response is sent, so wait for them to land.
+    await vi.waitFor(async () => {
+      const log = (await ctx.app.inject({ url: '/audit-log?limit=10', headers: auth })).json();
+      const rows = log.items.map(
+        (r: { method: string; route: string; statusCode: number; actorName: string }) =>
+          [r.method, r.route, r.statusCode, r.actorName].join(' '),
+      );
+      expect(rows[0]).toBe('DELETE /contracts/:id 403 VIEWER token');
+      expect(rows[1]).toBe('PATCH /contracts/:id 200 Admin (bootstrap token)');
+      expect(rows.some((r: string) => r.startsWith('GET'))).toBe(false);
+      expect(log.items[0].path).toBe(`/contracts/${c.id}`);
+    });
   });
 });
 

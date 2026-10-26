@@ -270,6 +270,8 @@ model ApiToken {
   createdAt  DateTime  @default(now())
   lastUsedAt DateTime?
   revokedAt  DateTime?
+  /// Tokens past this time are rejected like revoked ones. Null means the token never expires.
+  expiresAt  DateTime?
 }
 
 model Setting {

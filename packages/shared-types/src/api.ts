@@ -164,6 +164,8 @@ export const createApiTokenSchema = z.object({
   name: z.string().trim().min(1).max(120),
   /** Least privilege by default. */
   role: z.enum(TOKEN_ROLES).default('VIEWER'),
+  /** Days until the token stops working. Omit (or null) for a token that never expires. */
+  expiresInDays: z.number().int().min(1).max(3650).nullable().optional(),
 });
 
 export const listAuditLogQuerySchema = z.object({

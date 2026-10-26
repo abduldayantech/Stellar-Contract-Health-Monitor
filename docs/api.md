@@ -27,6 +27,11 @@ Every named token has a role (default `VIEWER`):
 The bootstrap token is always `ADMIN`. Requests without the needed role get `403 FORBIDDEN`.
 Give each person and integration its own token so the audit log shows who did what.
 
+Named tokens can expire: pass `"expiresInDays": 1-3650` when creating one (omit it, or send
+`null`, for a token that never expires). Expired tokens get `401 TOKEN_EXPIRED` ("Token
+expired"). The dashboard defaults new tokens to 90 days and highlights tokens that expire
+within a week.
+
 ### Audit log
 
 Every state-changing request (`POST`, `PUT`, `PATCH`, `DELETE`) is recorded with the token name,
@@ -48,7 +53,7 @@ never stored. Read it with `GET /audit-log` (admins only) or in **Settings → A
 | Status | Codes                                                                                           |
 | ------ | ----------------------------------------------------------------------------------------------- |
 | 400    | `VALIDATION_ERROR`, `INVALID_CONTRACT_ID`, `INVALID_JSON`, `INVALID_DESTINATION`, `INVALID_KEY` |
-| 401    | `UNAUTHORIZED`                                                                                  |
+| 401    | `UNAUTHORIZED`, `TOKEN_EXPIRED`                                                                 |
 | 403    | `FORBIDDEN` – the token's role does not allow this                                              |
 | 404    | `NOT_FOUND`                                                                                     |
 | 409    | `ALREADY_REGISTERED`, `INVALID_STATE`, `CONFLICT`                                               |
