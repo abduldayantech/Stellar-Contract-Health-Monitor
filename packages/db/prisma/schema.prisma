@@ -201,6 +201,14 @@ model NotificationDestination {
   config     Json
   createdAt  DateTime               @default(now())
   updatedAt  DateTime               @updatedAt
+  /// Failed deliveries in a row (test notifications excluded); reset by any success.
+  consecutiveFailures Int       @default(0)
+  /// When the current run of failures started.
+  firstFailureAt      DateTime?
+  lastFailureAt       DateTime?
+  /// Set when the worker disabled the destination because it kept failing.
+  disabledReason      String?
+  disabledAt          DateTime?
   rules      AlertRule[]
   deliveries NotificationDelivery[]
 }

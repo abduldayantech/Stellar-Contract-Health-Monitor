@@ -187,6 +187,17 @@ export function DestinationsCard({
                   {d.type === 'WEBHOOK' ? d.config.url : d.config.to?.join(', ')}
                   {d.config.secret && <> · secret {d.config.secret}</>}
                 </p>
+                {!d.enabled && d.disabledReason && (
+                  <p className="mt-1 text-xs text-rose-600 dark:text-rose-400" role="status">
+                    {d.disabledReason}
+                  </p>
+                )}
+                {d.enabled && (d.consecutiveFailures ?? 0) > 0 && (
+                  <p className="text-xs text-amber-700 dark:text-amber-400">
+                    {d.consecutiveFailures} failed deliver
+                    {d.consecutiveFailures === 1 ? 'y' : 'ies'} in a row
+                  </p>
+                )}
                 {d.last7Days && Object.keys(d.last7Days).length > 0 && (
                   <p className="text-xs text-slate-500">
                     Last 7 days: {d.last7Days.SUCCEEDED ?? 0} delivered, {d.last7Days.FAILED ?? 0}{' '}
@@ -219,7 +230,7 @@ export function DestinationsCard({
                     )
                   }
                 >
-                  {d.enabled ? 'Disable' : 'Enable'}
+                  {d.enabled ? 'Disable' : d.disabledReason ? 'Re-enable' : 'Enable'}
                 </Button>
                 {d.type === 'WEBHOOK' && (
                   <Button

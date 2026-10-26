@@ -147,3 +147,48 @@ export async function activeRulesFor(
     where: { enabled: true, type, OR: [{ contractRefId }, { contractRefId: null }] },
   });
 }
+
+/**
+ * Records an alert that isn't tied to a rule or contract (e.g. a destination was disabled) and
+ * notifies the default destinations, except any listed in `excludeDestinationIds`.
+ */
+export async function raiseSystemAlert(
+  deps: WorkerDeps,
+  params: {
+    severity: AlertSeverity;
+    title: string;
+    message: string;
+    context: Record<string, unknown>;
+    excludeDestinationIds?: string[];
+  },
+): Promise<string> {
+  const prefs = await loadPreferences(deps);
+  const exclude = new Set(params.excludeDestinationIds ?? []);
+  const targets = await deps.prisma.notificationDestination.findMany({
+    where: {
+      id: { in: prefs.defaultDestinationIds.filter((id) => !exclude.has(id)) },
+      enabled: true,
+    },
+    select: { id: true },
+  });
+  const alert = await deps.prisma.alert.create({
+    data: {
+      severity: params.severity,
+      title: params.title.slice(0, 500),
+      message: params.message.slice(0, 5000),
+      context: params.context as Prisma.InputJsonValue,
+      triggeredAt: deps.now(),
+      deliveries: {
+        create: targets.map((t) => ({
+          destinationId: t.id,
+          kind: 'alert.triggered',
+          maxAttempts: deps.config.WEBHOOK_MAX_ATTEMPTS,
+        })),
+      },
+    },
+    include: { deliveries: { select: { id: true } } },
+  });
+  deps.logger.warn({ alertId: alert.id, title: params.title }, 'system alert raised');
+  for (const d of alert.deliveries) await deps.enqueueDelivery(d.id);
+  return alert.id;
+}

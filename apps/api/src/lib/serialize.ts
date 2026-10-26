@@ -130,6 +130,10 @@ export function serializeDestination(
     type: d.type,
     enabled: d.enabled,
     config: safeConfig,
+    consecutiveFailures: d.consecutiveFailures,
+    lastFailureAt: d.lastFailureAt,
+    disabledReason: d.disabledReason,
+    disabledAt: d.disabledAt,
     createdAt: d.createdAt,
     updatedAt: d.updatedAt,
   };
