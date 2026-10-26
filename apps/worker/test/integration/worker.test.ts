@@ -537,8 +537,9 @@ describe('chat destinations', () => {
       });
   });
 
-  async function chatDelivery(type: 'SLACK', config: Record<string, unknown>) {
-    const c = await createContract(40);
+  let seed = 40;
+  async function chatDelivery(type: 'SLACK' | 'DISCORD', config: Record<string, unknown>) {
+    const c = await createContract(seed++);
     const d = await prisma.notificationDestination.create({
       data: {
         name: type,
@@ -592,6 +593,31 @@ describe('chat destinations', () => {
     expect(
       (await prisma.notificationDelivery.findUniqueOrThrow({ where: { id: delivery.id } })).status,
     ).toBe('FAILED');
+  });
+
+  it('posts Discord embeds and retries 429 with the retry_after hint', async () => {
+    const webhookUrl = 'https://discord.com/api/webhooks/1/token';
+    const { delivery } = await chatDelivery('DISCORD', { webhookUrl });
+    respond = 204;
+    await expect(
+      deliverNotification(h.deps, delivery.id, { number: 1, isFinalAttempt: false }),
+    ).resolves.toBe('sent');
+    expect(received[0]!.url).toBe(webhookUrl);
+    const body = JSON.parse(received[0]!.body);
+    expect(body.allowed_mentions).toEqual({ parse: [] });
+    expect(body.embeds[0]).toMatchObject({ title: '[WARNING] Low <balance>', color: 0xf59e0b });
+
+    const again = await chatDelivery('DISCORD', { webhookUrl });
+    respond = 429;
+    const err = await deliverNotification(h.deps, again.delivery.id, {
+      number: 1,
+      isFinalAttempt: false,
+    }).catch((e: unknown) => e);
+    expect(err).toMatchObject({ responseStatus: 429 });
+    expect(
+      (await prisma.notificationDelivery.findUniqueOrThrow({ where: { id: again.delivery.id } }))
+        .status,
+    ).toBe('PENDING');
   });
 
   it('rejects a stored Slack URL on another host', async () => {

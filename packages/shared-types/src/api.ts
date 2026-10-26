@@ -144,11 +144,22 @@ export const slackConfigSchema = z.object({
   webhookUrl: httpsUrlOn(['hooks.slack.com'], 'Slack webhook URL'),
 });
 
+export const discordConfigSchema = z.object({
+  webhookUrl: httpsUrlOn(
+    ['discord.com', 'discordapp.com', 'ptb.discord.com', 'canary.discord.com'],
+    'Discord webhook URL',
+  ).refine(
+    (u) => new URL(u).pathname.startsWith('/api/webhooks/'),
+    'Discord webhook URL must look like https://discord.com/api/webhooks/<id>/<token>',
+  ),
+});
+
 /** Config schema per destination type, for validating updates and stored configs. */
 export const destinationConfigSchemas = {
   WEBHOOK: webhookConfigSchema,
   EMAIL: emailConfigSchema,
   SLACK: slackConfigSchema,
+  DISCORD: discordConfigSchema,
 } as const;
 
 export const createDestinationSchema = z.discriminatedUnion('type', [
@@ -169,6 +180,12 @@ export const createDestinationSchema = z.discriminatedUnion('type', [
     name: z.string().trim().min(1).max(120),
     enabled: z.boolean().default(true),
     config: slackConfigSchema,
+  }),
+  z.object({
+    type: z.literal('DISCORD'),
+    name: z.string().trim().min(1).max(120),
+    enabled: z.boolean().default(true),
+    config: discordConfigSchema,
   }),
 ]);
 

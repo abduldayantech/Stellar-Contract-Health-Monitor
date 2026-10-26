@@ -4,11 +4,12 @@ Alert rules send notifications to one or more destinations. Create them on **Ale
 Add destination**, or with `POST /destinations`. Every destination has a **Send test** button
 (`POST /destinations/:id/test`) and a delivery history.
 
-| Type      | Config                       | Notes                                                   |
-| --------- | ---------------------------- | ------------------------------------------------------- |
-| `WEBHOOK` | `{ url, secret?, headers? }` | Signed JSON payload, see [webhooks.md](webhooks.md)     |
-| `EMAIL`   | `{ to: string[] }`           | Needs `SMTP_HOST` on the worker                         |
-| `SLACK`   | `{ webhookUrl }`             | Slack incoming webhook on `https://hooks.slack.com/...` |
+| Type      | Config                       | Notes                                                          |
+| --------- | ---------------------------- | -------------------------------------------------------------- |
+| `WEBHOOK` | `{ url, secret?, headers? }` | Signed JSON payload, see [webhooks.md](webhooks.md)            |
+| `EMAIL`   | `{ to: string[] }`           | Needs `SMTP_HOST` on the worker                                |
+| `SLACK`   | `{ webhookUrl }`             | Slack incoming webhook on `https://hooks.slack.com/...`        |
+| `DISCORD` | `{ webhookUrl }`             | Discord channel webhook `https://discord.com/api/webhooks/...` |
 
 ## Delivery and retries
 
@@ -16,7 +17,8 @@ Every destination type follows the same rules:
 
 - `2xx` responses mark the delivery **succeeded**.
 - `408`, `429` and `5xx` responses, network errors and timeouts are retried with exponential
-  backoff (up to 6 attempts).
+  backoff (10s, 20s, 40s…, up to 6 attempts). When the destination sends a `Retry-After` header
+  or a Discord `retry_after` value, the next attempt waits at least that long.
 - Other `4xx` responses and redirects fail the delivery straight away; they need a config fix.
 
 Failed deliveries can be retried from **Alerts → History**.
@@ -45,3 +47,13 @@ Messages use Block Kit: a header with the severity and title, the alert message,
 with severity, contract and trigger time, and a **View in dashboard** button that links to
 `PUBLIC_DASHBOARD_URL/alerts/history?alert=<id>`. Set `PUBLIC_DASHBOARD_URL` on the worker so the
 link points at your dashboard.
+
+## Discord
+
+1. In Discord, open **Server settings → Integrations → Webhooks**, create a webhook for the
+   alerts channel and copy its URL (`https://discord.com/api/webhooks/<id>/<token>`).
+2. Add a destination of type **Discord** with that URL, then press **Send test**.
+
+Each alert is one embed coloured by severity (info blue, warning amber, critical red, resolved
+green) with the severity, contract and a link to the alert in the dashboard. Mentions are
+disabled, so alert text can never ping `@everyone` or a role.

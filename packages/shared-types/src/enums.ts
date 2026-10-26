@@ -13,7 +13,7 @@ export type AlertSeverity = (typeof ALERT_SEVERITIES)[number];
 export const ALERT_STATUSES = ['TRIGGERED', 'ACKNOWLEDGED', 'RESOLVED'] as const;
 export type AlertStatus = (typeof ALERT_STATUSES)[number];
 
-export const DESTINATION_TYPES = ['WEBHOOK', 'EMAIL', 'SLACK'] as const;
+export const DESTINATION_TYPES = ['WEBHOOK', 'EMAIL', 'SLACK', 'DISCORD'] as const;
 export type DestinationType = (typeof DESTINATION_TYPES)[number];
 
 export const DELIVERY_STATUSES = ['PENDING', 'SUCCEEDED', 'FAILED'] as const;
