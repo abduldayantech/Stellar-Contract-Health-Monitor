@@ -9,7 +9,10 @@ import {
   evaluateTtl,
   formatDuration,
   isCoolingDown,
+  matchesValueCondition,
   matchTopics,
+  toBigInt,
+  valueAtPath,
   ttlSeverity,
   type EventLike,
 } from '../src';
@@ -238,5 +241,63 @@ describe('descriptions', () => {
     expect(d.title).toBe('transfer / GAGVZM…LQQX on XLM (CDLZFC…CYSC)');
     // Full values stay available in the context for webhook consumers.
     expect(JSON.stringify(d.context)).toContain(addr);
+  });
+});
+
+describe('value conditions', () => {
+  const huge = '170141183460469231731687303715884105727'; // i128 max
+
+  it('reads values by path', () => {
+    const v = { amount: '5', data: { amount: '7' }, list: ['9', { x: 1 }] };
+    expect(valueAtPath('3', '')).toBe('3');
+    expect(valueAtPath(v, 'amount')).toBe('5');
+    expect(valueAtPath(v, 'data.amount')).toBe('7');
+    expect(valueAtPath(v, 'list.0')).toBe('9');
+    expect(valueAtPath(v, 'list.1.x')).toBe(1);
+    expect(valueAtPath(v, 'missing.x')).toBeUndefined();
+  });
+
+  it('parses integers exactly and rejects everything else', () => {
+    expect(toBigInt(huge)).toBe(BigInt(huge));
+    expect(toBigInt(-12)).toBe(-12n);
+    expect(toBigInt(1.5)).toBeNull();
+    expect(toBigInt(2 ** 60)).toBeNull();
+    expect(toBigInt('1e9')).toBeNull();
+    expect(toBigInt({})).toBeNull();
+  });
+
+  it('compares beyond 2^53 without losing precision', () => {
+    const big = '9007199254740993'; // 2^53 + 1, not representable as a double
+    const cond = (op: 'gt' | 'gte' | 'lt' | 'lte' | 'eq', value: string) => ({
+      path: 'amount',
+      op,
+      value,
+    });
+    expect(matchesValueCondition(cond('gt', '9007199254740992'), { amount: big })).toBe(true);
+    expect(matchesValueCondition(cond('eq', big), { amount: big })).toBe(true);
+    expect(matchesValueCondition(cond('eq', '9007199254740992'), { amount: big })).toBe(false);
+    expect(matchesValueCondition(cond('lt', huge), { amount: big })).toBe(true);
+    expect(matchesValueCondition(cond('gte', huge), { amount: huge })).toBe(true);
+    expect(matchesValueCondition(cond('lte', '-1'), { amount: '-5' })).toBe(true);
+    expect(matchesValueCondition(cond('gt', '0'), { amount: 'abc' })).toBe(false);
+    expect(matchesValueCondition(cond('gt', '0'), { other: '1' })).toBe(false);
+  });
+
+  it('only matches events whose value satisfies the rule condition', () => {
+    const config = {
+      topics: ['transfer'],
+      threshold: 1,
+      windowSeconds: 60,
+      includeFailedCalls: false,
+      valueCondition: { path: '', op: 'gt' as const, value: '10000000000000' },
+    };
+    const big = { ...ev(['transfer']), value: '10000000000001' };
+    const small = { ...ev(['transfer']), value: '10' };
+    const r = evaluateEventMatch({ config, newEvents: [big, small], windowEvents: [], now });
+    expect(r.matched.map((e) => e.value)).toEqual(['10000000000001']);
+    expect(r.triggered).toBe(true);
+    expect(
+      evaluateEventMatch({ config, newEvents: [small], windowEvents: [], now }).triggered,
+    ).toBe(false);
   });
 });

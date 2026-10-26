@@ -364,6 +364,7 @@ function toEventLike(e: NormalizedEvent): EventLike {
     ledgerClosedAt: e.ledgerClosedAt,
     txHash: e.txHash,
     inSuccessfulContractCall: e.inSuccessfulContractCall,
+    value: e.value,
   };
 }
 
@@ -399,6 +400,7 @@ export async function evaluateEventRules(
             ledgerClosedAt: true,
             txHash: true,
             inSuccessfulContractCall: true,
+            value: true,
           },
           orderBy: { ledger: 'desc' },
           take: 10_000,

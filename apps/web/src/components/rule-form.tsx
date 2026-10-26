@@ -12,7 +12,7 @@ import {
   ledgersToDuration,
 } from '@stellar-health/ui';
 import { api, errorMessage } from '@/lib/api';
-import { RULE_TYPE_LABELS } from '@/lib/rules';
+import { RULE_TYPE_LABELS, VALUE_OPS, type ValueCondition } from '@/lib/rules';
 import type { AlertRule, Contract, Destination } from '@/lib/types';
 
 type RuleType = AlertRule['type'];
@@ -64,6 +64,11 @@ export function RuleForm({
   const [topics, setTopics] = useState(((cfg.topics as string[] | undefined) ?? []).join(', '));
   const [threshold, setThreshold] = useState(String(cfg.threshold ?? 1));
   const [windowMinutes, setWindowMinutes] = useState(String(Number(cfg.windowSeconds ?? 300) / 60));
+  const seedCondition = cfg.valueCondition as ValueCondition | undefined;
+  const [valueEnabled, setValueEnabled] = useState(Boolean(seedCondition));
+  const [valuePath, setValuePath] = useState(seedCondition?.path ?? 'amount');
+  const [valueOp, setValueOp] = useState<ValueCondition['op']>(seedCondition?.op ?? 'gte');
+  const [valueThreshold, setValueThreshold] = useState(seedCondition?.value ?? '');
   // TTL_EXPIRY
   const [ttlDays, setTtlDays] = useState(
     String(Number(cfg.ledgersThreshold ?? LEDGERS_PER_DAY * 7) / LEDGERS_PER_DAY),
@@ -84,6 +89,15 @@ export function RuleForm({
           threshold: Math.max(1, Math.round(Number(threshold) || 1)),
           windowSeconds: Math.max(1, Math.round(Number(windowMinutes) * 60) || 300),
           includeFailedCalls: false,
+          ...(valueEnabled
+            ? {
+                valueCondition: {
+                  path: valuePath.trim(),
+                  op: valueOp,
+                  value: valueThreshold.trim(),
+                },
+              }
+            : {}),
         };
       case 'TTL_EXPIRY':
         return { ledgersThreshold: Math.max(1, Math.round(Number(ttlDays) * LEDGERS_PER_DAY)) };
@@ -219,6 +233,62 @@ export function RuleForm({
                   onChange={(e) => setWindowMinutes(e.target.value)}
                 />
               </Field>
+              <div className="space-y-3 sm:col-span-3">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={valueEnabled}
+                    onChange={(e) => setValueEnabled(e.target.checked)}
+                  />
+                  Only when a numeric value matches
+                </label>
+                {valueEnabled && (
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <Field
+                      label="Value path"
+                      htmlFor="r-value-path"
+                      hint='Field of the event value: "amount", "0" for the first item, or empty for a plain number.'
+                    >
+                      <Input
+                        id="r-value-path"
+                        value={valuePath}
+                        onChange={(e) => setValuePath(e.target.value)}
+                        placeholder="amount"
+                        className="font-mono"
+                      />
+                    </Field>
+                    <Field label="Comparison" htmlFor="r-value-op">
+                      <Select
+                        id="r-value-op"
+                        value={valueOp}
+                        onChange={(e) => setValueOp(e.target.value as ValueCondition['op'])}
+                      >
+                        {VALUE_OPS.map(([op, label]) => (
+                          <option key={op} value={op}>
+                            {label}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                    <Field
+                      label="Value"
+                      htmlFor="r-value"
+                      hint="Whole number in the token's smallest unit (1 XLM = 10,000,000 stroops). Compared exactly."
+                    >
+                      <Input
+                        id="r-value"
+                        inputMode="numeric"
+                        pattern="-?[0-9]+"
+                        required
+                        value={valueThreshold}
+                        onChange={(e) => setValueThreshold(e.target.value)}
+                        placeholder="10000000000000"
+                        className="font-mono"
+                      />
+                    </Field>
+                  </div>
+                )}
+              </div>
             </div>
           )}
           {type === 'TTL_EXPIRY' && (

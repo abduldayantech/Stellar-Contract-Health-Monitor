@@ -122,6 +122,20 @@ Rule body:
 }
 ```
 
+`EVENT_MATCH` can also compare a number in the event value with `valueCondition`:
+
+```json
+{
+  "topics": ["transfer"],
+  "valueCondition": { "path": "amount", "op": "gte", "value": "10000000000000" }
+}
+```
+
+`path` is dot-separated (`""` for a plain number, `amount`, `0`, `data.amount`); `op` is one of
+`gt`, `gte`, `lt`, `lte`, `eq`; `value` is a whole number as a string. Values are compared as
+big integers, so i128 token amounts (in the token's smallest unit) are exact. Events whose value
+at `path` isn't an integer don't match.
+
 `TTL_EXPIRY` config: `{ "ledgersThreshold": 120960 }`. `INACTIVITY` config: `{ "windowSeconds": 86400 }`.
 
 ### Alerts

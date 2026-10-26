@@ -8,6 +8,29 @@ import { z } from 'zod';
  */
 export const topicFilterSchema = z.array(z.string().min(1).max(256)).max(4);
 
+export const VALUE_CONDITION_OPS = ['gt', 'gte', 'lt', 'lte', 'eq'] as const;
+export type ValueConditionOp = (typeof VALUE_CONDITION_OPS)[number];
+
+/**
+ * Compares a numeric field of the decoded event value with an integer, exactly (BigInt), so
+ * i128 token amounts work. `path` is dot-separated: "" for a scalar value, "amount" for a
+ * map/struct field, "0" for the first element of a vector, "data.amount" for nested values.
+ */
+export const valueConditionSchema = z.object({
+  path: z
+    .string()
+    .trim()
+    .max(200)
+    .regex(/^([^.\s]+(\.[^.\s]+)*)?$/, 'Path must be dot-separated keys, e.g. amount or 0.amount')
+    .default(''),
+  op: z.enum(VALUE_CONDITION_OPS),
+  value: z
+    .string()
+    .trim()
+    .regex(/^-?\d{1,80}$/, 'Value must be a whole number, e.g. 10000000000 (amounts in stroops)'),
+});
+export type ValueCondition = z.infer<typeof valueConditionSchema>;
+
 export const eventMatchConfigSchema = z.object({
   topics: topicFilterSchema.default([]),
   /** Number of matching events within `windowSeconds` required to trigger. */
@@ -20,6 +43,8 @@ export const eventMatchConfigSchema = z.object({
     .default(300),
   /** Also count events emitted by failed contract calls. */
   includeFailedCalls: z.boolean().default(false),
+  /** Only count events whose value satisfies this numeric comparison. */
+  valueCondition: valueConditionSchema.optional(),
 });
 export type EventMatchConfig = z.infer<typeof eventMatchConfigSchema>;
 

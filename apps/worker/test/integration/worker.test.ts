@@ -191,6 +191,30 @@ describe('event alert rules', () => {
     expect(await prisma.alert.count()).toBe(1);
   });
 
+  it('only alerts on events whose value passes the numeric condition', async () => {
+    const c = await createContract(12, { createdAt: past(3600_000) });
+    await prisma.alertRule.create({
+      data: {
+        name: 'Large transfers',
+        type: 'EVENT_MATCH',
+        contractRefId: c.id,
+        cooldownSeconds: 0,
+        config: {
+          topics: ['transfer', '**'],
+          valueCondition: { path: 'amount', op: 'gte', value: '10000000000000000000' },
+        },
+        createdAt: past(3600_000),
+      },
+    });
+    h.rpc.emit(c.contractId, 700, ['transfer']).value = { amount: '9999999999999999999' };
+    await ingestContract(h.deps, c.id);
+    expect(await prisma.alert.count()).toBe(0);
+
+    h.rpc.emit(c.contractId, 701, ['transfer']).value = { amount: '10000000000000000000' };
+    await ingestContract(h.deps, c.id);
+    expect(await prisma.alert.count()).toBe(1);
+  });
+
   it('does not alert on events backfilled from before the rule existed', async () => {
     const c = await createContract(11);
     await prisma.alertRule.create({ data: { name: 'Any', type: 'EVENT_MATCH', config: {} } });
