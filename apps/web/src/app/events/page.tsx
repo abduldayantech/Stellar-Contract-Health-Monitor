@@ -164,7 +164,7 @@ function EventsExplorer() {
                 Clear ({activeCount})
               </Button>
             )}
-            <span className="ml-auto text-xs text-slate-500">
+            <span className="ml-auto text-xs text-slate-500 dark:text-slate-400">
               {isValidating && !isLoading
                 ? 'Refreshing…'
                 : `${events.length.toLocaleString()} shown${hasMore ? '+' : ''}`}

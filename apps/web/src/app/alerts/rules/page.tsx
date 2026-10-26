@@ -125,7 +125,7 @@ function RulesPage() {
                     {!r.enabled && <Badge tone="slate">disabled</Badge>}
                   </div>
                   <p className="text-xs text-slate-600 dark:text-slate-400">{describeRule(r)}</p>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
                     {r.contract
                       ? `Contract: ${r.contract.label ?? r.contract.contractId.slice(0, 10)}`
                       : 'All contracts'}{' '}

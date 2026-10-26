@@ -241,7 +241,7 @@ function NetworkRow({ setting, onSaved }: { setting: NetworkSetting; onSaved: ()
           <p className="text-sm font-medium">
             {setting.network.charAt(0) + setting.network.slice(1).toLowerCase()}
           </p>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
             {setting.source === 'unconfigured' ? 'not configured' : `from ${setting.source}`}
           </p>
         </div>
@@ -488,7 +488,7 @@ function NotificationPreferences() {
           <p className="text-xs font-medium text-slate-700 dark:text-slate-300">
             Default destinations
           </p>
-          <p className="mb-2 text-xs text-slate-500">
+          <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
             Used by rules that don&apos;t select any destinations of their own.
           </p>
           {destinations.data?.items.length ? (
@@ -512,7 +512,9 @@ function NotificationPreferences() {
               ))}
             </div>
           ) : (
-            <p className="text-xs text-slate-500">No destinations configured yet.</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              No destinations configured yet.
+            </p>
           )}
         </div>
         <label className="flex items-center gap-2 text-sm">
@@ -562,13 +564,13 @@ function SystemStatus() {
           <ul className="space-y-2">
             <li className="flex items-center gap-2">
               <StatusDot tone={data.database.ok ? 'green' : 'red'} /> Database{' '}
-              <span className="ml-auto text-xs text-slate-500">
+              <span className="ml-auto text-xs text-slate-500 dark:text-slate-400">
                 {data.database.ok ? `${data.database.latencyMs} ms` : data.database.error}
               </span>
             </li>
             <li className="flex items-center gap-2">
               <StatusDot tone={data.redis.ok ? 'green' : 'red'} /> Redis{' '}
-              <span className="ml-auto text-xs text-slate-500">
+              <span className="ml-auto text-xs text-slate-500 dark:text-slate-400">
                 {data.redis.ok ? `${data.redis.latencyMs} ms` : data.redis.error}
               </span>
             </li>
@@ -580,7 +582,7 @@ function SystemStatus() {
             {data.workers.map((w) => (
               <li key={w.name} className="flex items-center gap-2">
                 <StatusDot tone={w.healthy ? 'green' : 'red'} /> Worker <Mono>{w.name}</Mono>
-                <span className="ml-auto text-xs text-slate-500">
+                <span className="ml-auto text-xs text-slate-500 dark:text-slate-400">
                   last beat {timeAgo(w.lastBeatAt)}
                 </span>
               </li>

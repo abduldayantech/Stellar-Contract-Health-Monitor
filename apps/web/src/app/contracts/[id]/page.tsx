@@ -325,7 +325,7 @@ export default function ContractDetailPage() {
                     <div className="flex items-center gap-2">
                       <SeverityBadge severity={a.severity} />
                       <AlertStatusBadge status={a.status} />
-                      <span className="ml-auto text-xs text-slate-500">
+                      <span className="ml-auto text-xs text-slate-500 dark:text-slate-400">
                         {timeAgo(a.triggeredAt)}
                       </span>
                     </div>
@@ -501,7 +501,7 @@ function StorageSection({
               <Td>
                 <TtlBar ledgersRemaining={s.exists ? s.ledgersRemaining : 0} />
               </Td>
-              <Td className="whitespace-nowrap text-xs text-slate-500">
+              <Td className="whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">
                 {timeAgo(s.lastCheckedAt)}
               </Td>
               <Td>

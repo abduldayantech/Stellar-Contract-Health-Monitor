@@ -156,7 +156,8 @@ export function TtlBar({
   ledgersRemaining: number | null;
   reference?: number;
 }) {
-  if (ledgersRemaining === null) return <span className="text-xs text-slate-400">—</span>;
+  if (ledgersRemaining === null)
+    return <span className="text-xs text-slate-500 dark:text-slate-400">—</span>;
   const pct = Math.max(0, Math.min(100, (ledgersRemaining / reference) * 100));
   const color =
     ledgersRemaining <= 0
@@ -168,9 +169,13 @@ export function TtlBar({
     <div
       className="h-1.5 w-24 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800"
       role="meter"
-      aria-valuenow={ledgersRemaining}
+      aria-label="Storage TTL remaining"
+      aria-valuenow={Math.max(0, Math.min(reference, ledgersRemaining))}
       aria-valuemin={0}
       aria-valuemax={reference}
+      aria-valuetext={
+        ledgersRemaining <= 0 ? 'Expired' : `${ledgersRemaining.toLocaleString()} ledgers left`
+      }
     >
       <div
         className={`h-full ${color}`}

@@ -48,11 +48,23 @@ export function EventTable({
               <tr
                 className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50"
                 onClick={() => setExpanded(isOpen ? null : e.id)}
-                aria-expanded={isOpen}
                 data-testid="event-row"
               >
                 <Td className="whitespace-nowrap">
-                  <span title={formatDateTime(e.ledgerClosedAt)}>{timeAgo(e.ledgerClosedAt)}</span>
+                  {/* The whole row toggles on click; this button makes it keyboard accessible. */}
+                  <button
+                    type="button"
+                    aria-expanded={isOpen}
+                    aria-label={`${isOpen ? 'Hide' : 'Show'} details for the event at ledger ${e.ledger}`}
+                    title={formatDateTime(e.ledgerClosedAt)}
+                    className="rounded text-left hover:underline focus-visible:outline-2 focus-visible:outline-indigo-600"
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      setExpanded(isOpen ? null : e.id);
+                    }}
+                  >
+                    {timeAgo(e.ledgerClosedAt)}
+                  </button>
                 </Td>
                 {showContract && (
                   <Td className="whitespace-nowrap">
@@ -84,7 +96,9 @@ export function EventTable({
                         </Badge>
                       </button>
                     ))}
-                    {e.topics.length === 0 && <span className="text-xs text-slate-400">none</span>}
+                    {e.topics.length === 0 && (
+                      <span className="text-xs text-slate-500 dark:text-slate-400">none</span>
+                    )}
                   </div>
                 </Td>
                 <Td className="max-w-xs truncate">
@@ -100,15 +114,19 @@ export function EventTable({
                   <Td colSpan={showContract ? 6 : 5}>
                     <dl className="grid gap-3 py-2 text-xs sm:grid-cols-2">
                       <div>
-                        <dt className="font-medium text-slate-500">Event ID</dt>
+                        <dt className="font-medium text-slate-500 dark:text-slate-400">Event ID</dt>
                         <dd className="font-mono">{e.eventId}</dd>
                       </div>
                       <div>
-                        <dt className="font-medium text-slate-500">Closed at</dt>
+                        <dt className="font-medium text-slate-500 dark:text-slate-400">
+                          Closed at
+                        </dt>
                         <dd>{formatDateTime(e.ledgerClosedAt)}</dd>
                       </div>
                       <div className="sm:col-span-2">
-                        <dt className="font-medium text-slate-500">Transaction</dt>
+                        <dt className="font-medium text-slate-500 dark:text-slate-400">
+                          Transaction
+                        </dt>
                         <dd className="flex flex-wrap items-center gap-2 font-mono">
                           <span className="break-all">{e.txHash}</span>
                           <CopyButton value={e.txHash} />
@@ -125,7 +143,7 @@ export function EventTable({
                         </dd>
                       </div>
                       <div className="sm:col-span-2">
-                        <dt className="font-medium text-slate-500">Topics</dt>
+                        <dt className="font-medium text-slate-500 dark:text-slate-400">Topics</dt>
                         <dd className="space-y-0.5 font-mono break-all">
                           {e.topics.map((t, i) => (
                             <div key={i}>
@@ -135,7 +153,9 @@ export function EventTable({
                         </dd>
                       </div>
                       <div className="sm:col-span-2">
-                        <dt className="font-medium text-slate-500">Value (decoded)</dt>
+                        <dt className="font-medium text-slate-500 dark:text-slate-400">
+                          Value (decoded)
+                        </dt>
                         <dd>
                           <pre className="mt-1 max-h-64 overflow-auto rounded bg-white p-2 font-mono text-xs dark:bg-slate-950">
                             {JSON.stringify(e.value, null, 2)}
@@ -143,7 +163,9 @@ export function EventTable({
                         </dd>
                       </div>
                       <div className="sm:col-span-2">
-                        <dt className="font-medium text-slate-500">Value (XDR)</dt>
+                        <dt className="font-medium text-slate-500 dark:text-slate-400">
+                          Value (XDR)
+                        </dt>
                         <dd className="font-mono break-all">{e.valueXdr}</dd>
                       </div>
                     </dl>
