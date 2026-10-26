@@ -6,6 +6,7 @@ import {
   escapeSlack,
   slackMessage,
   teamsMessage,
+  telegramMessage,
 } from '../../src/chat';
 import { deliveryBackoff, retryAfterMs } from '../../src/delivery';
 import { samplePayload } from './fixtures';
@@ -103,4 +104,33 @@ describe('teamsMessage', () => {
       },
     ]);
   });
+});
+
+describe('telegramMessage', () => {
+  it('uses HTML parse mode with escaped user text', () => {
+    const msg = telegramMessage(chatMessage(samplePayload(), 'https://dash.example.com'), '-100');
+    expect(msg).toMatchObject({
+      chat_id: '-100',
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+    });
+    expect(msg.text).toContain('<b>[CRITICAL] Large &lt;transfer&gt; &amp; mint</b>');
+    expect(msg.text).toContain('Amount &gt; 1000');
+    expect(msg.text).toContain(
+      '<a href="https://dash.example.com/alerts/history?alert=alert_1">View in dashboard</a>',
+    );
+  });
+
+  it('keeps long messages within the 4096 character limit', () => {
+    const p = samplePayload();
+    p.alert = { ...p.alert, message: '<'.repeat(5000) };
+    const msg = telegramMessage(chatMessage(p, 'https://dash.example.com'), '1');
+    expect(msg.text.length).toBeLessThanOrEqual(4096);
+    expect(msg.text).toContain('View in dashboard');
+    expect(msg.text).not.toMatch(/&l…|&lt…$/m);
+  });
+});
+
+it('reads Telegram retry_after from the response parameters', () => {
+  expect(retryAfterMs(null, '{"ok":false,"parameters":{"retry_after":7}}')).toBe(7000);
 });

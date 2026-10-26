@@ -178,6 +178,22 @@ export const teamsConfigSchema = z.object({
   ),
 });
 
+export const telegramConfigSchema = z.object({
+  /** From @BotFather, e.g. `123456789:AA…`. Encrypted at rest and never returned by the API. */
+  botToken: z
+    .string()
+    .trim()
+    .regex(/^\d{3,20}:[A-Za-z0-9_-]{20,100}$/, 'Bot token must look like 123456789:AA…'),
+  /** Numeric chat ID (negative for groups and channels) or a public @channel username. */
+  chatId: z
+    .string()
+    .trim()
+    .regex(
+      /^(-?\d{1,20}|@[A-Za-z][A-Za-z0-9_]{4,31})$/,
+      'Chat ID must be a number such as -1001234567890 or a @channel username',
+    ),
+});
+
 /** Config schema per destination type, for validating updates and stored configs. */
 export const destinationConfigSchemas = {
   WEBHOOK: webhookConfigSchema,
@@ -185,6 +201,7 @@ export const destinationConfigSchemas = {
   SLACK: slackConfigSchema,
   DISCORD: discordConfigSchema,
   TEAMS: teamsConfigSchema,
+  TELEGRAM: telegramConfigSchema,
 } as const;
 
 export const createDestinationSchema = z.discriminatedUnion('type', [
@@ -217,6 +234,12 @@ export const createDestinationSchema = z.discriminatedUnion('type', [
     name: z.string().trim().min(1).max(120),
     enabled: z.boolean().default(true),
     config: teamsConfigSchema,
+  }),
+  z.object({
+    type: z.literal('TELEGRAM'),
+    name: z.string().trim().min(1).max(120),
+    enabled: z.boolean().default(true),
+    config: telegramConfigSchema,
   }),
 ]);
 

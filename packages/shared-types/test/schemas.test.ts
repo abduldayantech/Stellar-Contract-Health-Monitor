@@ -107,6 +107,20 @@ describe('destination schemas', () => {
     expect(teams('https://evilwebhook.office.com/x')).toBe(false);
     expect(teams('http://contoso.webhook.office.com/x')).toBe(false);
   });
+
+  it('validates Telegram bot tokens and chat IDs', () => {
+    const tg = (botToken: string, chatId: string) =>
+      createDestinationSchema.safeParse({
+        type: 'TELEGRAM',
+        name: 't',
+        config: { botToken, chatId },
+      }).success;
+    const token = '123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw';
+    expect(tg(token, '-1001234567890')).toBe(true);
+    expect(tg(token, '@my_channel')).toBe(true);
+    expect(tg(token, 'not a chat')).toBe(false);
+    expect(tg('123/../evil', '1')).toBe(false);
+  });
 });
 
 describe('listEventsQuerySchema', () => {

@@ -147,3 +147,36 @@ export function teamsMessage(m: ChatMessage) {
     ],
   };
 }
+
+/** Telegram's HTML parse mode needs &, < and > escaped in text. */
+export function escapeTelegram(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/** `sendMessage` body using HTML parse mode (max 4096 characters). */
+export function telegramMessage(m: ChatMessage, chatId: string) {
+  const lines = [
+    `<b>${escapeTelegram(`${m.prefix} ${m.title}`)}</b>`,
+    '',
+    escapeTelegram(m.message),
+    '',
+    `<b>Severity:</b> ${m.resolved ? 'Resolved' : m.severity}`,
+    ...(m.contract ? [`<b>Contract:</b> <code>${escapeTelegram(m.contract)}</code>`] : []),
+    `<b>Triggered:</b> ${escapeTelegram(m.triggeredAt)}`,
+    ...(m.link ? ['', `<a href="${escapeTelegram(m.link)}">View in dashboard</a>`] : []),
+  ];
+  let text = lines.join('\n');
+  if (text.length > 4096) {
+    // Trim the message body rather than cutting through an HTML tag.
+    const over = text.length - 4096 + 1;
+    const body = escapeTelegram(m.message);
+    lines[2] = `${body.slice(0, Math.max(0, body.length - over)).replace(/&[a-z]*$/, '')}…`;
+    text = lines.join('\n');
+  }
+  return {
+    chat_id: chatId,
+    text,
+    parse_mode: 'HTML',
+    disable_web_page_preview: true,
+  };
+}

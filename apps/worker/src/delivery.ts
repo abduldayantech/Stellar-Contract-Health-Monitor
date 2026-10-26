@@ -7,11 +7,12 @@ import {
   emailConfigSchema,
   slackConfigSchema,
   teamsConfigSchema,
+  telegramConfigSchema,
   webhookConfigSchema,
   type WebhookPayload,
 } from '@stellar-health/shared-types';
 import { openDestinationConfig } from '@stellar-health/db';
-import { chatMessage, discordMessage, slackMessage, teamsMessage } from './chat';
+import { chatMessage, discordMessage, slackMessage, teamsMessage, telegramMessage } from './chat';
 import type { WorkerDeps } from './deps';
 import { recordDestinationFailure, recordDestinationSuccess } from './destination-health';
 import { assertPublicUrl } from './ssrf';
@@ -123,16 +124,20 @@ async function postJson(
 }
 
 /**
- * How long the destination asked us to wait, from a `Retry-After` header (seconds) or a
- * Discord-style JSON body (`{"retry_after": 1.5}`, seconds).
+ * How long the destination asked us to wait, from a `Retry-After` header (seconds), a
+ * Discord-style JSON body (`{"retry_after": 1.5}`) or a Telegram one
+ * (`{"parameters": {"retry_after": 3}}`), all in seconds.
  */
 export function retryAfterMs(header: string | null, body: string): number | undefined {
   const seconds = Number(header);
   if (header && Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds * 1000);
   try {
-    const parsed = JSON.parse(body) as { retry_after?: unknown };
-    if (typeof parsed.retry_after === 'number' && parsed.retry_after >= 0)
-      return Math.ceil(parsed.retry_after * 1000);
+    const parsed = JSON.parse(body) as {
+      retry_after?: unknown;
+      parameters?: { retry_after?: unknown };
+    };
+    const seconds = parsed.retry_after ?? parsed.parameters?.retry_after;
+    if (typeof seconds === 'number' && seconds >= 0) return Math.ceil(seconds * 1000);
   } catch {
     // Not JSON; no hint.
   }
@@ -194,6 +199,16 @@ async function sendTeams(deps: DeliveryDeps, config: unknown, payload: WebhookPa
   return postJson(deps, parsed.data.webhookUrl, JSON.stringify(message));
 }
 
+export const TELEGRAM_API = 'https://api.telegram.org';
+
+async function sendTelegram(deps: DeliveryDeps, config: unknown, payload: WebhookPayload) {
+  const parsed = telegramConfigSchema.safeParse(openConfig(deps, config));
+  if (!parsed.success) throw new PermanentDeliveryError('Invalid Telegram configuration');
+  const { botToken, chatId } = parsed.data;
+  const message = telegramMessage(chatMessage(payload, deps.config.PUBLIC_DASHBOARD_URL), chatId);
+  return postJson(deps, `${TELEGRAM_API}/bot${botToken}/sendMessage`, JSON.stringify(message));
+}
+
 async function sendEmail(deps: DeliveryDeps, config: unknown, payload: WebhookPayload) {
   if (!deps.mailer)
     throw new PermanentDeliveryError('Email is not configured on this server (SMTP_HOST is empty)');
@@ -252,6 +267,9 @@ export async function deliverNotification(
         break;
       case 'TEAMS':
         responseStatus = await sendTeams(deps, config, payload);
+        break;
+      case 'TELEGRAM':
+        responseStatus = await sendTelegram(deps, config, payload);
         break;
     }
 
