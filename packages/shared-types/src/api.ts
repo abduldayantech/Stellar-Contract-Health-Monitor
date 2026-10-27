@@ -194,6 +194,20 @@ export const telegramConfigSchema = z.object({
     ),
 });
 
+/** PagerDuty Events API v2 integration ("routing") key, plus the account's service region. */
+export const pagerDutyConfigSchema = z.object({
+  /** 32-character integration key. Encrypted at rest and never returned by the API. */
+  routingKey: z
+    .string()
+    .trim()
+    .regex(
+      /^[A-Za-z0-9]{32}$/,
+      'Routing key must be the 32-character Events API v2 integration key',
+    ),
+  /** EU accounts send events to events.eu.pagerduty.com. */
+  region: z.enum(['us', 'eu']).default('us'),
+});
+
 /** Config schema per destination type, for validating updates and stored configs. */
 export const destinationConfigSchemas = {
   WEBHOOK: webhookConfigSchema,
@@ -202,6 +216,7 @@ export const destinationConfigSchemas = {
   DISCORD: discordConfigSchema,
   TEAMS: teamsConfigSchema,
   TELEGRAM: telegramConfigSchema,
+  PAGERDUTY: pagerDutyConfigSchema,
 } as const;
 
 export const createDestinationSchema = z.discriminatedUnion('type', [
@@ -240,6 +255,12 @@ export const createDestinationSchema = z.discriminatedUnion('type', [
     name: z.string().trim().min(1).max(120),
     enabled: z.boolean().default(true),
     config: telegramConfigSchema,
+  }),
+  z.object({
+    type: z.literal('PAGERDUTY'),
+    name: z.string().trim().min(1).max(120),
+    enabled: z.boolean().default(true),
+    config: pagerDutyConfigSchema,
   }),
 ]);
 

@@ -4,14 +4,15 @@ Alert rules send notifications to one or more destinations. Create them on **Ale
 Add destination**, or with `POST /destinations`. Every destination has a **Send test** button
 (`POST /destinations/:id/test`) and a delivery history.
 
-| Type       | Config                       | Notes                                                          |
-| ---------- | ---------------------------- | -------------------------------------------------------------- |
-| `WEBHOOK`  | `{ url, secret?, headers? }` | Signed JSON payload, see [webhooks.md](webhooks.md)            |
-| `EMAIL`    | `{ to: string[] }`           | Needs `SMTP_HOST` on the worker                                |
-| `SLACK`    | `{ webhookUrl }`             | Slack incoming webhook on `https://hooks.slack.com/...`        |
-| `DISCORD`  | `{ webhookUrl }`             | Discord channel webhook `https://discord.com/api/webhooks/...` |
-| `TEAMS`    | `{ webhookUrl }`             | Teams incoming webhook or Workflows (Power Automate) URL       |
-| `TELEGRAM` | `{ botToken, chatId }`       | Telegram bot; the token is never returned by the API           |
+| Type        | Config                       | Notes                                                            |
+| ----------- | ---------------------------- | ---------------------------------------------------------------- |
+| `WEBHOOK`   | `{ url, secret?, headers? }` | Signed JSON payload, see [webhooks.md](webhooks.md)              |
+| `EMAIL`     | `{ to: string[] }`           | Needs `SMTP_HOST` on the worker                                  |
+| `SLACK`     | `{ webhookUrl }`             | Slack incoming webhook on `https://hooks.slack.com/...`          |
+| `DISCORD`   | `{ webhookUrl }`             | Discord channel webhook `https://discord.com/api/webhooks/...`   |
+| `TEAMS`     | `{ webhookUrl }`             | Teams incoming webhook or Workflows (Power Automate) URL         |
+| `TELEGRAM`  | `{ botToken, chatId }`       | Telegram bot; the token is never returned by the API             |
+| `PAGERDUTY` | `{ routingKey, region? }`    | Opens incidents and resolves them; key never returned by the API |
 
 ## Delivery and retries
 
@@ -28,7 +29,7 @@ Failed deliveries can be retried from **Alerts → History**.
 ## Credentials at rest
 
 Credential fields are encrypted with AES-256-GCM when `SECRETS_ENCRYPTION_KEY` is set: webhook
-signing secrets and header values, chat webhook URLs and Telegram bot tokens. The API never returns them in full
+signing secrets and header values, chat webhook URLs, Telegram bot tokens and PagerDuty routing keys. The API never returns them in full
 after creation: chat webhook URLs are shown masked, e.g. `https://hooks.slack.com/…a1b2`.
 
 ## Slack
@@ -86,3 +87,30 @@ Messages use HTML parse mode with all alert text escaped, and stay within Telegr
 character limit. The bot token is encrypted at rest and never returned by the API; the
 dashboard only shows the chat ID. Telegram `429` responses are retried after the
 `retry_after` it asks for.
+
+## PagerDuty
+
+1. In PagerDuty, open the service that should be paged, go to **Integrations → Add an
+   integration** and choose **Events API v2**. Copy its 32-character **Integration Key**.
+2. Add a destination of type **PagerDuty** with that key. Choose the **EU** region if your account
+   is hosted at `*.eu.pagerduty.com`.
+3. Press **Send test**: it opens an `info` incident and resolves it straight away, so nobody stays
+   paged.
+
+How alerts map onto PagerDuty events:
+
+| Alert                                    | Event                                            |
+| ---------------------------------------- | ------------------------------------------------ |
+| triggered                                | `trigger`, `dedup_key` = `schm-alert-<alert id>` |
+| resolved (TTL or inactivity recovered)   | `resolve` with the same `dedup_key`              |
+| resolved by hand in the dashboard / API  | `resolve` with the same `dedup_key`              |
+| severity `INFO` / `WARNING` / `CRITICAL` | `info` / `warning` / `critical`                  |
+
+Resolves are always sent to PagerDuty destinations that received the trigger, whatever the
+**Notify on resolve** preference, so incidents close when the condition clears. The event's
+`source` is `<network>:<contract ID>`, `component` the contract label, `group` and `class` the
+rule name and type, and `custom_details` carries the message, contract, rule and alert context. A
+link opens the alert in the dashboard (set `PUBLIC_DASHBOARD_URL`).
+
+The routing key is encrypted at rest and never returned by the API; the dashboard only shows the
+region. PagerDuty `429` and `5xx` responses are retried like any other destination.

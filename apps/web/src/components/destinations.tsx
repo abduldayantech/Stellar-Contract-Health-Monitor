@@ -34,6 +34,8 @@ export function DestinationsCard({
   const [emails, setEmails] = useState('');
   const [botToken, setBotToken] = useState('');
   const [chatId, setChatId] = useState('');
+  const [routingKey, setRoutingKey] = useState('');
+  const [region, setRegion] = useState<'us' | 'eu'>('us');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [revealed, setRevealed] = useState<{ id: string; secret: string } | null>(null);
@@ -51,12 +53,14 @@ export function DestinationsCard({
             ? { webhookUrl: url }
             : type === 'TELEGRAM'
               ? { botToken, chatId }
-              : {
-                  to: emails
-                    .split(',')
-                    .map((s) => s.trim())
-                    .filter(Boolean),
-                };
+              : type === 'PAGERDUTY'
+                ? { routingKey, region }
+                : {
+                    to: emails
+                      .split(',')
+                      .map((s) => s.trim())
+                      .filter(Boolean),
+                  };
       const body = { type, name, config };
       const d = await api<Destination>('/destinations', { method: 'POST', body });
       if (d.config.secret) setRevealed({ id: d.id, secret: d.config.secret });
@@ -65,6 +69,7 @@ export function DestinationsCard({
       setEmails('');
       setBotToken('');
       setChatId('');
+      setRoutingKey('');
       setAdding(false);
       onChange();
     } catch (err) {
@@ -90,7 +95,7 @@ export function DestinationsCard({
     <Card>
       <CardHeader
         title="Notification destinations"
-        description="Webhooks receive a signed JSON POST for every alert. Slack, Discord, Teams and Telegram post a formatted message to a chat. Email requires SMTP to be configured on the server."
+        description="Webhooks receive a signed JSON POST for every alert. Slack, Discord, Teams and Telegram post a formatted message to a chat. PagerDuty opens an incident and resolves it when the alert resolves. Email requires SMTP to be configured on the server."
         actions={
           <Button size="sm" variant="secondary" onClick={() => setAdding((a) => !a)}>
             {adding ? 'Cancel' : 'Add destination'}
@@ -115,6 +120,7 @@ export function DestinationsCard({
               <option value="DISCORD">Discord</option>
               <option value="TEAMS">Microsoft Teams</option>
               <option value="TELEGRAM">Telegram</option>
+              <option value="PAGERDUTY">PagerDuty</option>
             </Select>
           </Field>
           <Field label="Name" htmlFor="d-name">
@@ -182,6 +188,35 @@ export function DestinationsCard({
                 />
               </Field>
             </>
+          ) : type === 'PAGERDUTY' ? (
+            <>
+              <Field
+                label="Integration key"
+                htmlFor="d-routing"
+                hint="Events API v2 key of a PagerDuty service; stored encrypted"
+              >
+                <Input
+                  id="d-routing"
+                  type="password"
+                  autoComplete="off"
+                  value={routingKey}
+                  onChange={(e) => setRoutingKey(e.target.value)}
+                  required
+                  placeholder="32 characters"
+                  className="font-mono"
+                />
+              </Field>
+              <Field label="Region" htmlFor="d-region">
+                <Select
+                  id="d-region"
+                  value={region}
+                  onChange={(e) => setRegion(e.target.value as 'us' | 'eu')}
+                >
+                  <option value="us">US (events.pagerduty.com)</option>
+                  <option value="eu">EU (events.eu.pagerduty.com)</option>
+                </Select>
+              </Field>
+            </>
           ) : type === 'WEBHOOK' ? (
             <Field label="URL" htmlFor="d-url">
               <Input
@@ -233,7 +268,7 @@ export function DestinationsCard({
       ) : !destinations?.length ? (
         <EmptyState
           title="No destinations"
-          description="Add a Slack, Discord, Teams or Telegram chat, an email address or a webhook URL to receive alerts."
+          description="Add a Slack, Discord, Teams or Telegram chat, a PagerDuty service, an email address or a webhook URL to receive alerts."
         />
       ) : (
         <ul className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -255,7 +290,9 @@ export function DestinationsCard({
                       ? d.config.to?.join(', ')
                       : d.type === 'TELEGRAM'
                         ? `chat ${d.config.chatId ?? ''}`
-                        : d.config.webhookUrl}
+                        : d.type === 'PAGERDUTY'
+                          ? `Events API v2 · ${(d.config.region ?? 'us').toUpperCase()} region · opens and resolves incidents`
+                          : d.config.webhookUrl}
                   {d.config.secret && <> · secret {d.config.secret}</>}
                 </p>
                 {!d.enabled && d.disabledReason && (

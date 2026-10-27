@@ -97,6 +97,29 @@ export async function alertRoutes(app: FastifyInstance, { prisma, jobs }: AppDep
         include,
       });
     });
+    // Close incidents opened in PagerDuty for this alert.
+    const incidents = await prisma.notificationDelivery.findMany({
+      where: {
+        alertId: id,
+        kind: 'alert.triggered',
+        destination: { type: 'PAGERDUTY', enabled: true },
+      },
+      select: { destinationId: true, maxAttempts: true },
+      distinct: ['destinationId'],
+    });
+    for (const d of incidents) {
+      const delivery = await prisma.notificationDelivery.create({
+        data: {
+          alertId: id,
+          destinationId: d.destinationId,
+          kind: 'alert.resolved',
+          maxAttempts: d.maxAttempts,
+        },
+      });
+      await jobs
+        .enqueueDelivery(delivery.id)
+        .catch((err) => req.log.warn({ err }, 'failed to enqueue resolve notification'));
+    }
     return serializeAlert(updated);
   });
 

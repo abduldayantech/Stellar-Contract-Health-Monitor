@@ -158,6 +158,9 @@ function safeDestinationConfig(
     case 'TELEGRAM':
       // The bot token is a credential for the whole bot: never return any of it.
       return { chatId: config.chatId };
+    case 'PAGERDUTY':
+      // The routing key lets anyone open incidents on the service: never return any of it.
+      return { region: config.region ?? 'us' };
   }
 }
 

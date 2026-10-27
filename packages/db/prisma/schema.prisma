@@ -54,6 +54,7 @@ enum DestinationType {
   DISCORD
   TEAMS
   TELEGRAM
+  PAGERDUTY
 }
 
 enum DeliveryStatus {
@@ -202,48 +203,48 @@ model AlertRuleState {
 }
 
 model NotificationDestination {
-  id         String                 @id @default(cuid())
-  name       String
-  type       DestinationType
-  enabled    Boolean                @default(true)
+  id                  String                 @id @default(cuid())
+  name                String
+  type                DestinationType
+  enabled             Boolean                @default(true)
   /// WEBHOOK: { url, secret, headers? }  EMAIL: { to: string[] }  SLACK | DISCORD | TEAMS: { webhookUrl }  TELEGRAM: { botToken, chatId }
-  config     Json
-  createdAt  DateTime               @default(now())
-  updatedAt  DateTime               @updatedAt
+  config              Json
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
   /// Failed deliveries in a row (test notifications excluded); reset by any success.
-  consecutiveFailures Int       @default(0)
+  consecutiveFailures Int                    @default(0)
   /// When the current run of failures started.
   firstFailureAt      DateTime?
   lastFailureAt       DateTime?
   /// Set when the worker disabled the destination because it kept failing.
   disabledReason      String?
   disabledAt          DateTime?
-  rules      AlertRule[]
-  deliveries NotificationDelivery[]
+  rules               AlertRule[]
+  deliveries          NotificationDelivery[]
 }
 
 model Alert {
-  id             String                 @id @default(cuid())
-  ruleId         String?
-  rule           AlertRule?             @relation(fields: [ruleId], references: [id], onDelete: SetNull)
-  contractRefId  String?
-  contract       Contract?              @relation(fields: [contractRefId], references: [id], onDelete: Cascade)
-  status         AlertStatus            @default(TRIGGERED)
-  severity       AlertSeverity
-  title          String
-  message        String
-  context        Json
-  triggeredAt    DateTime               @default(now())
-  acknowledgedAt DateTime?
-  acknowledgedBy String?
+  id              String                 @id @default(cuid())
+  ruleId          String?
+  rule            AlertRule?             @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  contractRefId   String?
+  contract        Contract?              @relation(fields: [contractRefId], references: [id], onDelete: Cascade)
+  status          AlertStatus            @default(TRIGGERED)
+  severity        AlertSeverity
+  title           String
+  message         String
+  context         Json
+  triggeredAt     DateTime               @default(now())
+  acknowledgedAt  DateTime?
+  acknowledgedBy  String?
   /// Optional note left by the responder when acknowledging.
   acknowledgeNote String?
-  resolvedAt     DateTime?
+  resolvedAt      DateTime?
   /// Who resolved it by hand; null when the condition cleared on its own.
-  resolvedBy     String?
+  resolvedBy      String?
   /// Optional note left when resolving.
-  resolveNote    String?
-  deliveries     NotificationDelivery[]
+  resolveNote     String?
+  deliveries      NotificationDelivery[]
 
   @@index([triggeredAt(sort: Desc)])
   @@index([status])

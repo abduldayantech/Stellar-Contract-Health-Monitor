@@ -184,7 +184,7 @@ export const destination = z.object({
   config: z
     .record(json)
     .describe(
-      'WEBHOOK: {url, headers (names only), secret (masked; full value only on create/rotate)}. EMAIL: {to}.',
+      'WEBHOOK: {url, headers (names only), secret (masked; full value only on create/rotate)}. EMAIL: {to}. SLACK, DISCORD, TEAMS: {webhookUrl (masked)}. TELEGRAM: {chatId}. PAGERDUTY: {region}. Bot tokens and routing keys are never returned.',
     ),
   createdAt: dateTime,
   updatedAt: dateTime,

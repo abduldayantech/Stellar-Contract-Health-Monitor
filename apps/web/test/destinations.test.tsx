@@ -86,6 +86,29 @@ describe('DestinationsCard', () => {
     });
   });
 
+  it('creates a PagerDuty destination with a routing key and region', async () => {
+    api.mockResolvedValue({ ...slack, type: 'PAGERDUTY', config: { region: 'eu' } });
+    const onChange = vi.fn();
+    render(<DestinationsCard destinations={[]} loading={false} onChange={onChange} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Add destination' }));
+    fireEvent.change(screen.getByLabelText('Type'), { target: { value: 'PAGERDUTY' } });
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'On-call' } });
+    fireEvent.change(screen.getByLabelText(/Integration key/), {
+      target: { value: 'k'.repeat(32) },
+    });
+    fireEvent.change(screen.getByLabelText('Region'), { target: { value: 'eu' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+    expect(api).toHaveBeenCalledWith('/destinations', {
+      method: 'POST',
+      body: {
+        type: 'PAGERDUTY',
+        name: 'On-call',
+        config: { routingKey: 'k'.repeat(32), region: 'eu' },
+      },
+    });
+  });
+
   it('shows the masked Slack URL in the list', () => {
     render(<DestinationsCard destinations={[slack]} loading={false} onChange={vi.fn()} />);
     expect(screen.getByText('https://hooks.slack.com/…ghij')).toBeInTheDocument();

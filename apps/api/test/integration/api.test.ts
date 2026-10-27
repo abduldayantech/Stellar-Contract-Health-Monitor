@@ -706,6 +706,67 @@ describe('alert rules, destinations and alert history', () => {
     expect(JSON.stringify(row.config)).not.toContain(botToken);
   });
 
+  it('never returns a PagerDuty routing key, and rejects malformed ones', async () => {
+    const routingKey = 'f'.repeat(16) + '0123456789abcdef';
+    const bad = await ctx.app.inject({
+      method: 'POST',
+      url: '/destinations',
+      headers: auth,
+      payload: { type: 'PAGERDUTY', name: 'On-call', config: { routingKey: 'short' } },
+    });
+    expect(bad.statusCode).toBe(400);
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/destinations',
+      headers: auth,
+      payload: { type: 'PAGERDUTY', name: 'On-call', config: { routingKey, region: 'eu' } },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().config).toEqual({ region: 'eu' });
+    const list = await ctx.app.inject({ url: '/destinations', headers: auth });
+    expect(list.body).not.toContain(routingKey);
+    const row = await ctx.prisma.notificationDestination.findUniqueOrThrow({
+      where: { id: res.json().id },
+    });
+    expect(JSON.stringify(row.config)).not.toContain(routingKey);
+  });
+
+  it('closes PagerDuty incidents when an alert is resolved by hand', async () => {
+    const c = await register(22);
+    const pd = await ctx.prisma.notificationDestination.create({
+      data: { name: 'On-call', type: 'PAGERDUTY', config: { region: 'us' } },
+    });
+    const hook = await webhook();
+    const alert = await ctx.prisma.alert.create({
+      data: {
+        contractRefId: c.id,
+        severity: 'CRITICAL',
+        title: 'Large transfer',
+        message: 'details',
+        context: {},
+        deliveries: {
+          create: [
+            { destinationId: pd.id, kind: 'alert.triggered', status: 'SUCCEEDED' },
+            { destinationId: hook.id, kind: 'alert.triggered', status: 'SUCCEEDED' },
+          ],
+        },
+      },
+    });
+    ctx.jobs.deliveries = [];
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/alerts/${alert.id}/resolve`,
+      headers: auth,
+    });
+    expect(res.statusCode).toBe(200);
+    const resolves = await ctx.prisma.notificationDelivery.findMany({
+      where: { alertId: alert.id, kind: 'alert.resolved' },
+    });
+    // Only PagerDuty: other destinations follow the resolve-notification preference.
+    expect(resolves.map((d) => d.destinationId)).toEqual([pd.id]);
+    expect(ctx.jobs.deliveries).toEqual([resolves[0]!.id]);
+  });
+
   async function webhook() {
     const res = await ctx.app.inject({
       method: 'POST',

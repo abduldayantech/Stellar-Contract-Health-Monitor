@@ -25,6 +25,7 @@ export const DESTINATION_TYPES = [
   'DISCORD',
   'TEAMS',
   'TELEGRAM',
+  'PAGERDUTY',
 ] as const;
 export type DestinationType = (typeof DESTINATION_TYPES)[number];
 

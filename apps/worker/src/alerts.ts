@@ -88,6 +88,20 @@ export async function triggerAlert(
   return alertId;
 }
 
+/** Enabled incident-tool destinations (PagerDuty) that were sent this alert's trigger. */
+export async function incidentDestinationsFor(deps: WorkerDeps, alertId: string) {
+  const rows = await deps.prisma.notificationDelivery.findMany({
+    where: {
+      alertId,
+      kind: 'alert.triggered',
+      destination: { type: 'PAGERDUTY', enabled: true },
+    },
+    select: { destinationId: true },
+    distinct: ['destinationId'],
+  });
+  return rows.map((r) => r.destinationId);
+}
+
 /** Resolves a level alert whose condition cleared, optionally notifying destinations. */
 export async function resolveLevelAlert(
   deps: WorkerDeps,
@@ -108,9 +122,13 @@ export async function resolveLevelAlert(
   });
   deps.metrics.alertsResolved.labels(params.rule.type).inc();
 
+  // Incident tools such as PagerDuty must hear about the resolve to close what they opened,
+  // whatever the resolve-notification preference says.
+  const destinationIds = new Set(await incidentDestinationsFor(deps, alert.id));
   const prefs = await loadPreferences(deps);
-  if (!prefs.notifyOnResolve) return;
-  const destinationIds = await destinationsFor(deps, params.rule.id);
+  if (prefs.notifyOnResolve) {
+    for (const id of await destinationsFor(deps, params.rule.id)) destinationIds.add(id);
+  }
   for (const destinationId of destinationIds) {
     const d = await deps.prisma.notificationDelivery.create({
       data: {

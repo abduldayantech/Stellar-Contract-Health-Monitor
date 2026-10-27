@@ -834,6 +834,94 @@ describe('chat destinations', () => {
     return { delivery: alert.deliveries[0]!, alert, destination: d };
   }
 
+  it('opens a PagerDuty incident for a TTL alert and resolves it without the resolve preference', async () => {
+    const routingKey = 'R'.repeat(32);
+    const c = await createContract(seed++);
+    const d = await prisma.notificationDestination.create({
+      data: {
+        name: 'On-call',
+        type: 'PAGERDUTY',
+        config: sealDestinationConfig(h.deps.secrets, {
+          routingKey,
+          region: 'us',
+        }) as Prisma.InputJsonValue,
+      },
+    });
+    expect(JSON.stringify(d.config)).not.toContain(routingKey);
+    await prisma.storageEntry.create({
+      data: { contractRefId: c.id, kind: 'INSTANCE', label: 'I', ledgerKeyXdr: 'pd-k' },
+    });
+    await prisma.alertRule.create({
+      data: {
+        name: 'TTL',
+        type: 'TTL_EXPIRY',
+        severity: 'CRITICAL',
+        cooldownSeconds: 0,
+        config: { ledgersThreshold: 1000 },
+        destinations: { connect: { id: d.id } },
+      },
+    });
+    const ttl = (liveUntilLedger: number) =>
+      h.rpc.ttls.set('pd-k', {
+        ledgerKeyXdr: 'pd-k',
+        exists: true,
+        liveUntilLedger,
+        lastModifiedLedger: 1,
+      });
+    const deliverAll = async () => {
+      for (const x of await prisma.notificationDelivery.findMany({ where: { status: 'PENDING' } }))
+        await deliverNotification(h.deps, x.id, { number: 1, isFinalAttempt: false });
+    };
+
+    ttl(1200);
+    await checkStorage(h.deps, c.id);
+    await deliverAll();
+    ttl(900_000);
+    await checkStorage(h.deps, c.id);
+    await deliverAll();
+
+    expect(received.map((r) => r.url)).toEqual([
+      'https://events.pagerduty.com/v2/enqueue',
+      'https://events.pagerduty.com/v2/enqueue',
+    ]);
+    const [trigger, resolve] = received.map((r) => JSON.parse(r.body));
+    expect(trigger).toMatchObject({
+      routing_key: routingKey,
+      event_action: 'trigger',
+      payload: { severity: 'critical', source: `testnet:${c.contractId}` },
+    });
+    expect(resolve).toEqual({
+      routing_key: routingKey,
+      event_action: 'resolve',
+      dedup_key: trigger.dedup_key,
+    });
+  });
+
+  it('sends a PagerDuty test as a trigger immediately followed by its resolve', async () => {
+    const d = await prisma.notificationDestination.create({
+      data: {
+        name: 'On-call',
+        type: 'PAGERDUTY',
+        config: sealDestinationConfig(h.deps.secrets, {
+          routingKey: 'T'.repeat(32),
+          region: 'eu',
+        }) as Prisma.InputJsonValue,
+      },
+    });
+    const delivery = await prisma.notificationDelivery.create({
+      data: { destinationId: d.id, kind: 'test' },
+    });
+    await deliverNotification(h.deps, delivery.id, { number: 1, isFinalAttempt: false });
+    expect(received.map((r) => r.url)).toEqual([
+      'https://events.eu.pagerduty.com/v2/enqueue',
+      'https://events.eu.pagerduty.com/v2/enqueue',
+    ]);
+    const [a, b] = received.map((r) => JSON.parse(r.body));
+    expect([a.event_action, b.event_action]).toEqual(['trigger', 'resolve']);
+    expect(a.dedup_key).toBe(b.dedup_key);
+    expect(a.dedup_key).toContain(delivery.id);
+  });
+
   it('posts Block Kit messages to Slack with the URL stored encrypted', async () => {
     const webhookUrl = 'https://hooks.slack.com/services/T000/B000/secret123';
     const { delivery, alert, destination } = await chatDelivery('SLACK', { webhookUrl });

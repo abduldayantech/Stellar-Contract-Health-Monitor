@@ -5,6 +5,7 @@ import {
   WEBHOOK_TIMESTAMP_HEADER,
   discordConfigSchema,
   emailConfigSchema,
+  pagerDutyConfigSchema,
   slackConfigSchema,
   teamsConfigSchema,
   telegramConfigSchema,
@@ -14,6 +15,7 @@ import {
 import { openDestinationConfig } from '@stellar-health/db';
 import { chatMessage, discordMessage, slackMessage, teamsMessage, telegramMessage } from './chat';
 import type { WorkerDeps } from './deps';
+import { PAGERDUTY_EVENTS_URL, pagerDutyEvent } from './pagerduty';
 import { recordDestinationFailure, recordDestinationSuccess } from './destination-health';
 import { assertPublicUrl } from './ssrf';
 
@@ -209,6 +211,22 @@ async function sendTelegram(deps: DeliveryDeps, config: unknown, payload: Webhoo
   return postJson(deps, `${TELEGRAM_API}/bot${botToken}/sendMessage`, JSON.stringify(message));
 }
 
+async function sendPagerDuty(deps: DeliveryDeps, config: unknown, payload: WebhookPayload) {
+  const parsed = pagerDutyConfigSchema.safeParse(openConfig(deps, config));
+  if (!parsed.success) throw new PermanentDeliveryError('Invalid PagerDuty configuration');
+  const { routingKey, region } = parsed.data;
+  const url = PAGERDUTY_EVENTS_URL[region];
+  const dashboard = deps.config.PUBLIC_DASHBOARD_URL;
+  if (payload.type === 'test') {
+    // Open and immediately close a test incident, so testing never leaves anyone paged.
+    const key = `schm-test-${payload.deliveryId}`;
+    await postJson(deps, url, JSON.stringify(pagerDutyEvent(payload, routingKey, dashboard, key)));
+    const resolve = { ...payload, type: 'alert.resolved' as const };
+    return postJson(deps, url, JSON.stringify(pagerDutyEvent(resolve, routingKey, dashboard, key)));
+  }
+  return postJson(deps, url, JSON.stringify(pagerDutyEvent(payload, routingKey, dashboard)));
+}
+
 async function sendEmail(deps: DeliveryDeps, config: unknown, payload: WebhookPayload) {
   if (!deps.mailer)
     throw new PermanentDeliveryError('Email is not configured on this server (SMTP_HOST is empty)');
@@ -270,6 +288,9 @@ export async function deliverNotification(
         break;
       case 'TELEGRAM':
         responseStatus = await sendTelegram(deps, config, payload);
+        break;
+      case 'PAGERDUTY':
+        responseStatus = await sendPagerDuty(deps, config, payload);
         break;
     }
 

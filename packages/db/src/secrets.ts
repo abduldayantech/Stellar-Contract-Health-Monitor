@@ -56,7 +56,7 @@ export function createSecretBox(keyMaterial?: string | null): SecretBox {
 }
 
 /** Top-level destination config fields that hold credentials and are encrypted at rest. */
-export const SENSITIVE_CONFIG_KEYS = ['secret', 'webhookUrl', 'botToken'] as const;
+export const SENSITIVE_CONFIG_KEYS = ['secret', 'webhookUrl', 'botToken', 'routingKey'] as const;
 
 function mapSensitive(config: unknown, fn: (v: string) => string): Record<string, unknown> {
   const c = { ...((config ?? {}) as Record<string, unknown>) };
