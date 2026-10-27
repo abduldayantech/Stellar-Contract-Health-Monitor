@@ -21,6 +21,7 @@ import { contractRoutes } from './routes/contracts';
 import { destinationRoutes } from './routes/destinations';
 import { eventRoutes } from './routes/events';
 import { settingsRoutes } from './routes/settings';
+import { silenceRoutes } from './routes/silences';
 import { statusRoutes } from './routes/status';
 
 declare module 'fastify' {
@@ -134,6 +135,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await alertRuleRoutes(app, deps);
   await destinationRoutes(app, deps);
   await alertRoutes(app, deps);
+  await silenceRoutes(app, deps);
 
   return app;
 }

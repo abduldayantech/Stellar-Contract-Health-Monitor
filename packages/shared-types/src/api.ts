@@ -279,6 +279,37 @@ export const listAlertsQuerySchema = z.object({
   cursor: z.string().optional(),
 });
 
+const silenceScopeSchema = z.object({
+  contractRefId: z.string().trim().min(1).nullable().optional(),
+  ruleId: z.string().trim().min(1).nullable().optional(),
+  startsAt: z.union([
+    z.date(),
+    z
+      .string()
+      .datetime()
+      .transform((value) => new Date(value)),
+  ]),
+  endsAt: z.union([
+    z.date(),
+    z
+      .string()
+      .datetime()
+      .transform((value) => new Date(value)),
+  ]),
+  reason: z.string().trim().min(1).max(500),
+});
+
+export const createSilenceSchema = silenceScopeSchema
+  .refine((value) => value.contractRefId || value.ruleId, {
+    message: 'A silence must target a contract, a rule, or both',
+  })
+  .refine((value) => value.endsAt > value.startsAt, {
+    message: 'The end time must be after the start time',
+    path: ['endsAt'],
+  });
+
+export const updateSilenceSchema = silenceScopeSchema.partial();
+
 /** Optional body for POST /alerts/:id/acknowledge and /resolve. */
 export const alertActionSchema = z
   .object({ note: z.string().trim().max(1000).optional() })

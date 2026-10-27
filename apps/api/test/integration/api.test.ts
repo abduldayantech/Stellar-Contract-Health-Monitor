@@ -287,6 +287,81 @@ describe('roles and audit log', () => {
     expect(mint.statusCode).toBe(403);
   });
 
+  it('lets editors create, update and delete silences, recording the creator', async () => {
+    const c = await register(33);
+    const editor = await tokenFor('EDITOR');
+    const viewer = await tokenFor('VIEWER');
+    const rule = await ctx.prisma.alertRule.create({
+      data: { name: 'Transfers', type: 'EVENT_MATCH', config: { topics: ['transfer'] } },
+    });
+    const payload = {
+      contractRefId: c.id,
+      ruleId: rule.id,
+      startsAt: new Date(Date.now() - 60_000).toISOString(),
+      endsAt: new Date(Date.now() + 3_600_000).toISOString(),
+      reason: 'Planned upgrade',
+    };
+
+    const denied = await ctx.app.inject({
+      method: 'POST',
+      url: '/silences',
+      headers: viewer,
+      payload,
+    });
+    expect(denied.statusCode).toBe(403);
+
+    const created = await ctx.app.inject({
+      method: 'POST',
+      url: '/silences',
+      headers: editor,
+      payload,
+    });
+    expect(created.statusCode).toBe(201);
+    expect(created.json()).toMatchObject({
+      contractRefId: c.id,
+      ruleId: rule.id,
+      reason: 'Planned upgrade',
+      createdBy: 'EDITOR token',
+    });
+    const id = created.json().id as string;
+    expect((await ctx.app.inject({ url: '/silences', headers: auth })).json().items).toHaveLength(
+      1,
+    );
+
+    const updated = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/silences/${id}`,
+      headers: editor,
+      payload: { reason: 'Upgrade window' },
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json()).toMatchObject({ reason: 'Upgrade window', createdBy: 'EDITOR token' });
+    expect((await ctx.prisma.silence.findUniqueOrThrow({ where: { id } })).reason).toBe(
+      'Upgrade window',
+    );
+
+    expect(
+      (
+        await ctx.app.inject({
+          method: 'DELETE',
+          url: `/silences/${id}`,
+          headers: editor,
+        })
+      ).statusCode,
+    ).toBe(204);
+    expect(await ctx.prisma.silence.count()).toBe(0);
+    await vi.waitFor(async () => {
+      const entries = (await ctx.app.inject({ url: '/audit-log?limit=10', headers: auth })).json()
+        .items;
+      expect(
+        entries.some(
+          (entry: { route: string; method: string }) =>
+            entry.route === '/silences' && entry.method === 'POST',
+        ),
+      ).toBe(true);
+    });
+  });
+
   it('records every change, including denied attempts, in the audit log', async () => {
     const c = await register(32);
     const viewer = await tokenFor('VIEWER');

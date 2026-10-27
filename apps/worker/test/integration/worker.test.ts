@@ -237,6 +237,49 @@ describe('RPC failover', () => {
 });
 
 describe('event alert rules', () => {
+  it('records alerts during an active silence without creating deliveries and resumes after expiry', async () => {
+    const c = await createContract(9, { createdAt: past(3600_000) });
+    const d = await webhookDestination('https://example.com/silenced-hook');
+    await prisma.alertRule.create({
+      data: {
+        name: 'Transfers',
+        type: 'EVENT_MATCH',
+        contractRefId: c.id,
+        cooldownSeconds: 0,
+        config: { topics: ['transfer'] },
+        destinations: { connect: [{ id: d.id }] },
+        createdAt: past(3600_000),
+      },
+    });
+    const silence = await prisma.silence.create({
+      data: {
+        contractRefId: c.id,
+        startsAt: past(60_000),
+        endsAt: new Date(Date.now() + 60_000),
+        reason: 'Planned upgrade',
+        createdBy: 'Test operator',
+      },
+    });
+
+    h.rpc.emit(c.contractId, 701, ['transfer']);
+    await ingestContract(h.deps, c.id);
+    const muted = await prisma.alert.findFirstOrThrow({ include: { deliveries: true } });
+    expect(muted).toMatchObject({ silenced: true });
+    expect(muted.deliveries).toHaveLength(0);
+    expect(h.queued).toEqual([]);
+
+    await prisma.silence.update({
+      where: { id: silence.id },
+      data: { endsAt: past(1) },
+    });
+    h.rpc.emit(c.contractId, 702, ['transfer']);
+    await ingestContract(h.deps, c.id);
+    const alerts = await prisma.alert.findMany({ include: { deliveries: true } });
+    expect(alerts).toHaveLength(2);
+    expect(alerts.find((alert) => !alert.silenced)?.deliveries).toHaveLength(1);
+    expect(h.queued).toHaveLength(1);
+  });
+
   it('triggers on matching new events, queues deliveries and respects cooldown', async () => {
     const c = await createContract(10, { createdAt: past(3600_000) });
     const d = await webhookDestination('https://example.com/hook');

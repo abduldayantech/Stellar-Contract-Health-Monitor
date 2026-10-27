@@ -22,11 +22,11 @@ tokens** (`POST /settings/tokens`). Named tokens are stored hashed and shown onc
 
 Every named token has a role (default `VIEWER`):
 
-| Role     | Can                                                                                                                                         |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `VIEWER` | Read everything except API tokens and the audit log                                                                                         |
-| `EDITOR` | Also register/pause/delete contracts, manage storage entries, alert rules and destinations, acknowledge/resolve alerts and retry deliveries |
-| `ADMIN`  | Also change RPC providers and notification preferences, manage API tokens and read the audit log                                            |
+| Role     | Can                                                                                                                                                   |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VIEWER` | Read everything except API tokens and the audit log                                                                                                   |
+| `EDITOR` | Also register/pause/delete contracts, manage storage entries, alert rules, silences and destinations, acknowledge/resolve alerts and retry deliveries |
+| `ADMIN`  | Also change RPC providers and notification preferences, manage API tokens and read the audit log                                                      |
 
 The bootstrap token is always `ADMIN`. Requests without the needed role get `403 FORBIDDEN`.
 Give each person and integration its own token so the audit log shows who did what.
@@ -123,6 +123,18 @@ command, and TTL alerts include the same command for entries that are still live
 | POST                 | `/destinations/:id/rotate-secret` | New webhook secret (returned once)                                                                                    |
 | POST                 | `/destinations/:id/test`          | Queue a test notification                                                                                             |
 | GET                  | `/destinations/:id/deliveries`    | Last 50 deliveries                                                                                                    |
+
+### Silences
+
+| Method               | Path            | Description                      |
+| -------------------- | --------------- | -------------------------------- |
+| GET / POST           | `/silences`     | List / create a silence          |
+| GET / PATCH / DELETE | `/silences/:id` | Read / update / delete a silence |
+
+Create a one-time silence with `startsAt`, `endsAt`, and `reason`, and at least one of `contractRefId` or
+`ruleId`. Supplying both limits the silence to that contract/rule pair. Alerts are still recorded
+with `silenced: true` while the silence is active, but no notification deliveries are created.
+Expired silences stop applying automatically; their creator is recorded for auditing.
 
 Rule body:
 

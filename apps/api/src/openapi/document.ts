@@ -5,6 +5,7 @@ import {
   createApiTokenSchema,
   createContractSchema,
   createDestinationSchema,
+  createSilenceSchema,
   createStorageEntrySchema,
   listAlertsQuerySchema,
   listAuditLogQuerySchema,
@@ -15,6 +16,7 @@ import {
   updateAlertRuleSchema,
   updateContractSchema,
   updateDestinationSchema,
+  updateSilenceSchema,
   upsertNetworkConfigSchema,
   validateContractSchema,
 } from '@stellar-health/shared-types';
@@ -268,6 +270,45 @@ export const ROUTES: RouteDoc[] = [
     path: '/alert-rules/:id',
     tag: 'Alert rules',
     summary: 'Delete a rule',
+    responses: { 204: noContent },
+  },
+
+  // ---- Silences ----
+  {
+    method: 'get',
+    path: '/silences',
+    tag: 'Silences',
+    summary: 'List contract and rule silences',
+    responses: { 200: ok(r.list(r.silence)) },
+  },
+  {
+    method: 'get',
+    path: '/silences/:id',
+    tag: 'Silences',
+    summary: 'One silence',
+    responses: { 200: ok(r.silence) },
+  },
+  {
+    method: 'post',
+    path: '/silences',
+    tag: 'Silences',
+    summary: 'Create a silence',
+    body: createSilenceSchema,
+    responses: { 201: ok(r.silence, 'Created') },
+  },
+  {
+    method: 'patch',
+    path: '/silences/:id',
+    tag: 'Silences',
+    summary: 'Update a silence',
+    body: updateSilenceSchema,
+    responses: { 200: ok(r.silence) },
+  },
+  {
+    method: 'delete',
+    path: '/silences/:id',
+    tag: 'Silences',
+    summary: 'Delete a silence',
     responses: { 204: noContent },
   },
 
