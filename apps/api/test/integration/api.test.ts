@@ -526,6 +526,31 @@ describe('alert rules, destinations and alert history', () => {
     expect(JSON.stringify(row.config)).not.toContain('office.com');
   });
 
+  it('never returns a Telegram bot token', async () => {
+    const botToken = '123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw';
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/destinations',
+      headers: auth,
+      payload: { type: 'TELEGRAM', name: 'Bot', config: { botToken, chatId: '-100123' } },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().config).toEqual({ chatId: '-100123' });
+    const id = res.json().id;
+    // Changing the chat keeps the stored token.
+    const patched = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/destinations/${id}`,
+      headers: auth,
+      payload: { config: { chatId: '@ops_channel' } },
+    });
+    expect(patched.json().config).toEqual({ chatId: '@ops_channel' });
+    const list = await ctx.app.inject({ url: '/destinations', headers: auth });
+    expect(list.body).not.toContain(botToken.split(':')[1]);
+    const row = await ctx.prisma.notificationDestination.findUniqueOrThrow({ where: { id } });
+    expect(JSON.stringify(row.config)).not.toContain(botToken);
+  });
+
   async function webhook() {
     const res = await ctx.app.inject({
       method: 'POST',

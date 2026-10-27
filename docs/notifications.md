@@ -4,13 +4,14 @@ Alert rules send notifications to one or more destinations. Create them on **Ale
 Add destination**, or with `POST /destinations`. Every destination has a **Send test** button
 (`POST /destinations/:id/test`) and a delivery history.
 
-| Type      | Config                       | Notes                                                          |
-| --------- | ---------------------------- | -------------------------------------------------------------- |
-| `WEBHOOK` | `{ url, secret?, headers? }` | Signed JSON payload, see [webhooks.md](webhooks.md)            |
-| `EMAIL`   | `{ to: string[] }`           | Needs `SMTP_HOST` on the worker                                |
-| `SLACK`   | `{ webhookUrl }`             | Slack incoming webhook on `https://hooks.slack.com/...`        |
-| `DISCORD` | `{ webhookUrl }`             | Discord channel webhook `https://discord.com/api/webhooks/...` |
-| `TEAMS`   | `{ webhookUrl }`             | Teams incoming webhook or Workflows (Power Automate) URL       |
+| Type       | Config                       | Notes                                                          |
+| ---------- | ---------------------------- | -------------------------------------------------------------- |
+| `WEBHOOK`  | `{ url, secret?, headers? }` | Signed JSON payload, see [webhooks.md](webhooks.md)            |
+| `EMAIL`    | `{ to: string[] }`           | Needs `SMTP_HOST` on the worker                                |
+| `SLACK`    | `{ webhookUrl }`             | Slack incoming webhook on `https://hooks.slack.com/...`        |
+| `DISCORD`  | `{ webhookUrl }`             | Discord channel webhook `https://discord.com/api/webhooks/...` |
+| `TEAMS`    | `{ webhookUrl }`             | Teams incoming webhook or Workflows (Power Automate) URL       |
+| `TELEGRAM` | `{ botToken, chatId }`       | Telegram bot; the token is never returned by the API           |
 
 ## Delivery and retries
 
@@ -27,7 +28,7 @@ Failed deliveries can be retried from **Alerts → History**.
 ## Credentials at rest
 
 Credential fields are encrypted with AES-256-GCM when `SECRETS_ENCRYPTION_KEY` is set: webhook
-signing secrets and header values, and chat webhook URLs. The API never returns them in full
+signing secrets and header values, chat webhook URLs and Telegram bot tokens. The API never returns them in full
 after creation: chat webhook URLs are shown masked, e.g. `https://hooks.slack.com/…a1b2`.
 
 ## Slack
@@ -70,3 +71,18 @@ Teams accepts an Adaptive Card through either:
 Copy the URL, add a destination of type **Microsoft Teams**, then press **Send test**. The card
 shows the title (coloured by severity), the message, a fact list with severity, contract and
 trigger time, and a **View in dashboard** button.
+
+## Telegram
+
+1. Create a bot with [@BotFather](https://t.me/BotFather) and copy its token
+   (`123456789:AA…`).
+2. Add the bot to the group or channel that should receive alerts (as an admin for channels).
+3. Find the chat ID: send a message in the chat and open
+   `https://api.telegram.org/bot<token>/getUpdates`; group and channel IDs are negative numbers
+   such as `-1001234567890`. Public channels can also use their `@username`.
+4. Add a destination of type **Telegram** with the token and chat ID, then press **Send test**.
+
+Messages use HTML parse mode with all alert text escaped, and stay within Telegram's 4096
+character limit. The bot token is encrypted at rest and never returned by the API; the
+dashboard only shows the chat ID. Telegram `429` responses are retried after the
+`retry_after` it asks for.
