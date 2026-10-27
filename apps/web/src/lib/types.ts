@@ -1,3 +1,5 @@
+import type { ExtendTarget } from '@stellar-health/shared-types/extend-command';
+
 import type { ContractHealth } from '@stellar-health/ui';
 
 export type Network = 'TESTNET' | 'MAINNET' | 'FUTURENET' | 'LOCAL';
@@ -37,6 +39,8 @@ export interface StorageEntry {
   estimatedExpiry: string | null;
   lastCheckedAt: string | null;
   lastError: string | null;
+  /** How to pass this entry to `stellar contract extend`; null for unknown key types. */
+  extend: ExtendTarget | null;
 }
 
 export interface AlertRule {
@@ -109,12 +113,21 @@ export interface EventItem {
   inSuccessfulContractCall: boolean;
 }
 
+export type DestinationType = 'WEBHOOK' | 'EMAIL' | 'SLACK';
+
 export interface Destination {
   id: string;
   name: string;
-  type: 'WEBHOOK' | 'EMAIL';
+  type: DestinationType;
   enabled: boolean;
-  config: { url?: string; secret?: string | null; headers?: string[]; to?: string[] };
+  config: {
+    url?: string;
+    secret?: string | null;
+    headers?: string[];
+    to?: string[];
+    /** Masked chat webhook URL (Slack). */
+    webhookUrl?: string | null;
+  };
   last7Days?: Record<string, number>;
   createdAt: string;
 }

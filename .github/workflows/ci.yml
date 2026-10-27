@@ -72,10 +72,32 @@ jobs:
             test-results
           retention-days: 7
 
-  docker:
-    name: Build images
+  helm:
+    name: Helm chart
     runs-on: ubuntu-latest
+    env:
+      CHART: deploy/helm/stellar-health
+      TEST_VALUES: --set secrets.adminApiToken=ci-admin-token-0123456789abcdef --set secrets.encryptionKey=Y2ktZW5jcnlwdGlvbi1rZXktMzItYnl0ZXMtbG9uZyE=
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+      - run: helm lint --strict $CHART $TEST_VALUES
+      - name: Render default, external-services and autoscaling/ingress variants
+        run: |
+          helm template ci $CHART $TEST_VALUES > /dev/null
+          helm template ci $CHART --set existingSecret=app --set postgresql.enabled=false --set redis.enabled=false > /dev/null
+          helm template ci $CHART $TEST_VALUES --set api.autoscaling.enabled=true --set ingress.enabled=true > /dev/null
+
+  docker:
+    name: Build and scan images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     strategy:
+      fail-fast: false
       matrix:
         target: [api, worker, web]
     steps:
@@ -86,6 +108,34 @@ jobs:
           context: .
           file: docker/Dockerfile
           target: ${{ matrix.target }}
+          tags: stellar-health-${{ matrix.target }}:ci
+          load: true
           push: false
           cache-from: type=gha,scope=${{ matrix.target }}
           cache-to: type=gha,mode=max,scope=${{ matrix.target }}
+      - name: Scan for vulnerabilities (report)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: stellar-health-${{ matrix.target }}:ci
+          format: sarif
+          output: trivy-${{ matrix.target }}.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+      - name: Upload scan results
+        # Fork PRs get a read-only token, so only upload for pushes and same-repo PRs.
+        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.target }}.sarif
+          category: trivy-${{ matrix.target }}
+      - name: Fail on fixable critical vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: stellar-health-${{ matrix.target }}:ci
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+          exit-code: '1'
+          skip-setup-trivy: true

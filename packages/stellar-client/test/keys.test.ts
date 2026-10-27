@@ -2,8 +2,10 @@ import { xdr } from '@stellar/stellar-sdk';
 import { describe, expect, it } from 'vitest';
 import {
   buildStorageKeyScVal,
+  contractCodeLedgerKey,
   contractDataLedgerKey,
   contractInstanceLedgerKey,
+  extendTargetForLedgerKey,
   ledgerKeyToXdr,
 } from '../src';
 
@@ -31,5 +33,39 @@ describe('ledger keys', () => {
   it('encodes durability', () => {
     const key = contractDataLedgerKey(ID, buildStorageKeyScVal('symbol', 'x'), 'TEMPORARY');
     expect(key.contractData().durability().name).toBe('temporary');
+  });
+});
+
+describe('extendTargetForLedgerKey', () => {
+  it('recognises instance, code and data keys', () => {
+    expect(extendTargetForLedgerKey(ledgerKeyToXdr(contractInstanceLedgerKey(ID)))).toEqual({
+      kind: 'instance',
+    });
+    const hash = 'ab'.repeat(32);
+    expect(extendTargetForLedgerKey(ledgerKeyToXdr(contractCodeLedgerKey(hash)))).toEqual({
+      kind: 'code',
+      wasmHash: hash,
+    });
+    const symbolKey = contractDataLedgerKey(
+      ID,
+      buildStorageKeyScVal('symbol', 'admin'),
+      'TEMPORARY',
+    );
+    expect(extendTargetForLedgerKey(ledgerKeyToXdr(symbolKey))).toEqual({
+      kind: 'data',
+      durability: 'temporary',
+      key: { symbol: 'admin' },
+    });
+    const variant = buildStorageKeyScVal('enum_variant', 'Admin');
+    const variantKey = contractDataLedgerKey(ID, variant, 'PERSISTENT');
+    expect(extendTargetForLedgerKey(ledgerKeyToXdr(variantKey))).toEqual({
+      kind: 'data',
+      durability: 'persistent',
+      key: { xdr: variant.toXDR('base64') },
+    });
+  });
+
+  it('returns null for invalid XDR', () => {
+    expect(extendTargetForLedgerKey('not-xdr')).toBeNull();
   });
 });

@@ -1,0 +1,106 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sh.fullname" . }}-worker
+  labels:
+    {{- include "sh.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  replicas: {{ .Values.worker.replicas }}
+  selector:
+    matchLabels: {{- include "sh.selector" (list . "worker") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "sh.labels" . | nindent 8 }}
+        app.kubernetes.io/component: worker
+      annotations:
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.worker.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "sh.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.migrations.enabled }}
+      # The worker image has no Prisma CLI; the API image applies (or confirms) the migrations.
+      initContainers:
+        - name: migrate
+          image: {{ include "sh.image" (list . "api") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ['./node_modules/.bin/prisma', 'migrate', 'deploy', '--schema', 'prisma/schema.prisma']
+          env: {{- include "sh.appEnv" . | nindent 12 }}
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      {{- end }}
+      containers:
+        - name: worker
+          image: {{ include "sh.image" (list . "worker") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - { name: metrics, containerPort: {{ .Values.worker.metricsPort }} }
+          env:
+            {{- include "sh.appEnv" . | nindent 12 }}
+            - name: WORKER_METRICS_PORT
+              value: {{ .Values.worker.metricsPort | quote }}
+            - name: WEBHOOK_BLOCK_PRIVATE_IPS
+              value: {{ .Values.config.webhookBlockPrivateIps | quote }}
+            - name: EVENT_RETENTION_DAYS
+              value: {{ .Values.config.eventRetentionDays | quote }}
+            - name: PUBLIC_DASHBOARD_URL
+              value: {{ default (printf "https://%s" .Values.ingress.host) .Values.config.publicDashboardUrl | quote }}
+            - name: SMTP_HOST
+              value: {{ .Values.config.smtp.host | quote }}
+            - name: SMTP_PORT
+              value: {{ .Values.config.smtp.port | quote }}
+            - name: SMTP_SECURE
+              value: {{ .Values.config.smtp.secure | quote }}
+            - name: SMTP_USER
+              value: {{ .Values.config.smtp.user | quote }}
+            - name: SMTP_FROM
+              value: {{ .Values.config.smtp.from | quote }}
+            - name: SMTP_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ include "sh.secretName" . }}, key: SMTP_PASSWORD, optional: true } }
+          livenessProbe:
+            httpGet: { path: /health, port: metrics }
+            periodSeconds: 15
+            failureThreshold: 4
+          readinessProbe:
+            httpGet: { path: /health, port: metrics }
+            periodSeconds: 10
+          startupProbe:
+            httpGet: { path: /health, port: metrics }
+            periodSeconds: 3
+            failureThreshold: 40
+          resources: {{- toYaml .Values.worker.resources | nindent 12 }}
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes: {{- include "sh.tmpVolume" . | nindent 8 }}
+      {{- with .Values.worker.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.worker.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.worker.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+# Exposes worker metrics for Prometheus (see deploy/prometheus).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "sh.fullname" . }}-worker
+  labels:
+    {{- include "sh.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  type: ClusterIP
+  selector: {{- include "sh.selector" (list . "worker") | nindent 4 }}
+  ports:
+    - { name: metrics, port: {{ .Values.worker.metricsPort }}, targetPort: metrics }

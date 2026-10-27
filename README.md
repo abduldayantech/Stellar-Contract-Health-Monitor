@@ -93,8 +93,10 @@ Integration and e2e tests need `pnpm services:up`; e2e also needs
 
 - [Architecture](docs/architecture.md) – components, data flow, event retention
 - [API reference](docs/api.md) – REST endpoints and authentication
+- [Notifications](docs/notifications.md) – destination types (webhook, email, Slack) and retries
 - [Webhooks](docs/webhooks.md) – payload format and signature verification
 - [Deployment](docs/deployment.md) – configuration and operations
+- [Monitoring](docs/monitoring.md) – Prometheus alerts and Grafana dashboard
 - [Contributing](CONTRIBUTING.md)
 
 ## License

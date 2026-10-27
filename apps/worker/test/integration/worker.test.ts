@@ -2,7 +2,12 @@ import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { verifyWebhookSignature } from '@stellar-health/alert-engine';
-import { disconnectPrisma, getPrisma } from '@stellar-health/db';
+import {
+  disconnectPrisma,
+  getPrisma,
+  sealDestinationConfig,
+  type Prisma,
+} from '@stellar-health/db';
 import { resetDatabase } from '../../../../tests/support/test-db';
 import { deliverNotification } from '../../src/delivery';
 import { checkInactivity } from '../../src/inactivity';
@@ -498,6 +503,103 @@ describe('webhook delivery', () => {
     expect(h.sent).toHaveLength(1);
     expect(h.sent[0]).toMatchObject({ to: ['ops@example.com'] });
     expect(h.sent[0]!.subject).toContain('Test notification');
+  });
+});
+
+describe('chat destinations', () => {
+  let server: Server;
+  let local: string;
+  let respond: number;
+  let received: { url: string; body: string }[];
+
+  beforeAll(async () => {
+    server = createServer((req, res) => {
+      let body = '';
+      req.on('data', (c) => (body += c));
+      req.on('end', () => {
+        received.push({ url: String(req.headers['x-original-url']), body });
+        res.statusCode = respond;
+        res.end(respond >= 400 ? 'nope' : 'ok');
+      });
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    local = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+  afterAll(() => new Promise<void>((r) => server.close(() => r())));
+  beforeEach(() => {
+    respond = 200;
+    received = [];
+    // Chat destinations only accept their provider's host, so route those calls to a local server.
+    h.deps.fetchImpl = (input, init) =>
+      fetch(local, {
+        ...init,
+        headers: { ...(init?.headers as Record<string, string>), 'x-original-url': String(input) },
+      });
+  });
+
+  async function chatDelivery(type: 'SLACK', config: Record<string, unknown>) {
+    const c = await createContract(40);
+    const d = await prisma.notificationDestination.create({
+      data: {
+        name: type,
+        type,
+        config: sealDestinationConfig(h.deps.secrets, config) as Prisma.InputJsonValue,
+      },
+    });
+    const alert = await prisma.alert.create({
+      data: {
+        contractRefId: c.id,
+        severity: 'WARNING',
+        title: 'Low <balance>',
+        message: 'Balance dropped',
+        context: {},
+        deliveries: { create: { destinationId: d.id } },
+      },
+      include: { deliveries: true },
+    });
+    return { delivery: alert.deliveries[0]!, alert, destination: d };
+  }
+
+  it('posts Block Kit messages to Slack with the URL stored encrypted', async () => {
+    const webhookUrl = 'https://hooks.slack.com/services/T000/B000/secret123';
+    const { delivery, alert, destination } = await chatDelivery('SLACK', { webhookUrl });
+    expect(JSON.stringify(destination.config)).not.toContain('hooks.slack.com');
+    await expect(
+      deliverNotification(h.deps, delivery.id, { number: 1, isFinalAttempt: false }),
+    ).resolves.toBe('sent');
+    expect(received).toHaveLength(1);
+    expect(received[0]!.url).toBe(webhookUrl);
+    const body = JSON.parse(received[0]!.body);
+    expect(body.text).toBe('[WARNING] Low &lt;balance&gt;');
+    expect(body.blocks.at(-1).elements[0].url).toContain(`/alerts/history?alert=${alert.id}`);
+  });
+
+  it('retries Slack 5xx and 429 responses but not 4xx', async () => {
+    const { delivery } = await chatDelivery('SLACK', {
+      webhookUrl: 'https://hooks.slack.com/services/T/B/x',
+    });
+    respond = 429;
+    await expect(
+      deliverNotification(h.deps, delivery.id, { number: 1, isFinalAttempt: false }),
+    ).rejects.toThrow(/429/);
+    expect(
+      (await prisma.notificationDelivery.findUniqueOrThrow({ where: { id: delivery.id } })).status,
+    ).toBe('PENDING');
+    respond = 404;
+    await expect(
+      deliverNotification(h.deps, delivery.id, { number: 2, isFinalAttempt: false }),
+    ).rejects.toThrow(/404/);
+    expect(
+      (await prisma.notificationDelivery.findUniqueOrThrow({ where: { id: delivery.id } })).status,
+    ).toBe('FAILED');
+  });
+
+  it('rejects a stored Slack URL on another host', async () => {
+    const { delivery } = await chatDelivery('SLACK', { webhookUrl: 'https://evil.example.com/x' });
+    await expect(
+      deliverNotification(h.deps, delivery.id, { number: 1, isFinalAttempt: false }),
+    ).rejects.toThrow(/Invalid Slack configuration/);
+    expect(received).toHaveLength(0);
   });
 });
 

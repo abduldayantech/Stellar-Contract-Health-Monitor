@@ -149,6 +149,23 @@ describe('evaluateTtl', () => {
     expect(d.title).toContain('Storage expiring in ~8m');
     expect(d.message).toContain('Instance: 100 ledgers');
   });
+
+  it('includes the extend command for live entries', () => {
+    const r = evaluateTtl({ config: { ledgersThreshold: 500 }, entries, latestLedger: 1000 });
+    const command = 'stellar contract extend --id CX --ledgers-to-extend 535679';
+    const d = describeTtl({
+      ruleName: 'ttl',
+      contract: { contractId: 'C'.repeat(56), label: 'Token', network: 'TESTNET' },
+      breaches: r,
+      latestLedger: 1000,
+      ledgersThreshold: 500,
+      extendCommands: Object.fromEntries(entries.map((e) => [e.id, command])),
+    });
+    expect(d.message).toContain(`Instance: 100 ledgers (~8m) left\n  ${command}`);
+    const ctx = d.context.entries as { expired: boolean; extendCommand?: string }[];
+    expect(ctx.filter((e) => e.extendCommand)).toHaveLength(r.filter((b) => !b.expired).length);
+    expect(ctx.find((e) => e.expired)?.extendCommand).toBeUndefined();
+  });
 });
 
 describe('evaluateInactivity', () => {

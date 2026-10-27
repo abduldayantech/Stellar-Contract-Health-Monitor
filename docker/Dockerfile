@@ -45,7 +45,16 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
   && cp -r apps/worker/dist /out/dist && cp -r packages/db/prisma /out/prisma \
   && cd /out && ./node_modules/.bin/prisma generate --schema prisma/schema.prisma
 
-FROM base AS runtime-node
+# Runtime images: OS security updates, OpenSSL for Prisma, and no npm/corepack (unused at
+# runtime and a source of CVEs in their bundled dependencies).
+FROM node:${NODE_VERSION}-bookworm-slim AS runtime-base
+RUN apt-get update && apt-get upgrade -y \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/* \
+  && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+     /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
+
+FROM runtime-base AS runtime-node
 ENV NODE_ENV=production
 WORKDIR /app
 USER node
@@ -66,7 +75,7 @@ CMD ["node", "--enable-source-maps", "dist/index.js"]
 FROM source AS build-web
 RUN pnpm --filter @stellar-health/web build
 
-FROM node:${NODE_VERSION}-bookworm-slim AS web
+FROM runtime-base AS web
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
 WORKDIR /app
 COPY --from=build-web --chown=node:node /repo/apps/web/.next/standalone ./

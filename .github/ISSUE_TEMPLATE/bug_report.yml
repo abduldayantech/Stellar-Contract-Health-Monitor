@@ -1,0 +1,39 @@
+name: Bug report
+description: Something isn't working as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you see, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Register contract ... on testnet
+        2. Create an event-match rule ...
+        3. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options: [Dashboard (web), API, Worker, Docker / deployment, Docs, Not sure]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: v0.2.0 or a commit SHA
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant API/worker log lines. Remove tokens and secrets first.
+      render: shell

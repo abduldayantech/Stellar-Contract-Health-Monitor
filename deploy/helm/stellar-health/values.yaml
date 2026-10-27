@@ -1,0 +1,152 @@
+# Default values for stellar-health. See docs/deployment.md for a walkthrough.
+
+image:
+  # Images are published by the release workflow as <registry>/<repository>-<api|worker|web>.
+  registry: ghcr.io
+  repository: abduldayantech/stellar-contract-health-monitor
+  # Defaults to the chart's appVersion.
+  tag: ''
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+nameOverride: ''
+fullnameOverride: ''
+
+serviceAccount:
+  create: true
+  name: ''
+  annotations: {}
+
+# ---- Secrets ----
+# Either let the chart create a Secret from these values, or point at an existing Secret with
+# the keys ADMIN_API_TOKEN, SECRETS_ENCRYPTION_KEY and DATABASE_URL (plus optional METRICS_TOKEN,
+# SMTP_PASSWORD and REDIS_URL).
+existingSecret: ''
+secrets:
+  # Bootstrap admin token for the API and dashboard (24+ characters). Required.
+  adminApiToken: ''
+  # 32 bytes, e.g. `openssl rand -base64 32`. Encrypts webhook secrets at rest. Required.
+  encryptionKey: ''
+  # Optional bearer token for /metrics.
+  metricsToken: ''
+  smtpPassword: ''
+
+# ---- Database and Redis ----
+# Used when postgresql.enabled is false. With an existingSecret, DATABASE_URL comes from it.
+externalDatabase:
+  url: ''
+# Used when redis.enabled is false.
+externalRedis:
+  url: ''
+
+postgresql:
+  # Runs a single Postgres pod. Fine for evaluation; use a managed database in production.
+  enabled: true
+  image: postgres:17-alpine
+  database: schm
+  username: schm
+  # Generated on first install and kept on upgrades when not set.
+  # password: <set to choose one>
+  persistence:
+    size: 10Gi
+    storageClass: ''
+  resources: {}
+
+redis:
+  enabled: true
+  image: redis:7-alpine
+  persistence:
+    size: 2Gi
+    storageClass: ''
+  resources: {}
+
+# ---- Application settings (non-secret) ----
+config:
+  logLevel: info
+  testnetRpcUrl: ''
+  mainnetRpcUrl: ''
+  futurenetRpcUrl: ''
+  initialLookbackLedgers: 17280
+  eventRetentionDays: 30
+  webhookBlockPrivateIps: true
+  publicDashboardUrl: ''
+  smtp:
+    host: ''
+    port: 587
+    secure: false
+    user: ''
+    from: 'Stellar Health Monitor <alerts@example.com>'
+  # Extra environment variables for every app container.
+  extraEnv: []
+
+# ---- Migrations ----
+# `prisma migrate deploy` runs in an init container of every API pod, so new pods only start
+# once the schema is current. Prisma takes a database lock, so several replicas are safe.
+migrations:
+  enabled: true
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+api:
+  replicas: 2
+  port: 4000
+  resources:
+    requests: { cpu: 100m, memory: 192Mi }
+    limits: { memory: 512Mi }
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+
+worker:
+  # Workers coordinate through Redis/BullMQ, so more replicas share the load.
+  replicas: 1
+  metricsPort: 4001
+  resources:
+    requests: { cpu: 100m, memory: 192Mi }
+    limits: { memory: 512Mi }
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+
+web:
+  replicas: 2
+  port: 3000
+  # Set to true when the dashboard is served over HTTPS (e.g. behind the Ingress with TLS).
+  secureCookies: false
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 384Mi }
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+
+service:
+  type: ClusterIP
+
+ingress:
+  enabled: false
+  className: ''
+  annotations: {}
+  host: health.example.com
+  tls: []
+  #  - secretName: health-tls
+  #    hosts: [health.example.com]

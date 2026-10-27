@@ -7,6 +7,9 @@ const config: NextConfig = {
   outputFileTracingRoot: path.join(import.meta.dirname, '../..'),
   transpilePackages: ['@stellar-health/ui', '@stellar-health/shared-types'],
   poweredByHeader: false,
+  // The dashboard serves no remote or user images. Disabling the optimizer removes the
+  // /_next/image attack surface (e.g. GHSA-2464-fhr4-w9xw); the middleware also blocks the route.
+  images: { unoptimized: true },
   reactStrictMode: true,
   eslint: { ignoreDuringBuilds: true },
   async headers() {

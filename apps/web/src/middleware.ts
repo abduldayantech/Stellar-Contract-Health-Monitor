@@ -5,6 +5,8 @@ const PUBLIC_PATHS = ['/login', '/api/health'];
 
 export function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
+  // Image optimization is disabled (next.config.ts); refuse the endpoint outright.
+  if (pathname.startsWith('/_next/image')) return new NextResponse(null, { status: 404 });
   if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`)))
     return NextResponse.next();
   if (req.cookies.get(SESSION_COOKIE)?.value) return NextResponse.next();
@@ -21,5 +23,5 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|icon.svg).*)'],
+  matcher: ['/((?!_next/static|favicon.ico|icon.svg).*)'],
 };

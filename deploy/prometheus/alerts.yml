@@ -1,0 +1,77 @@
+# Prometheus alerting rules for Stellar Contract Health Monitor.
+# Check with: promtool check rules deploy/prometheus/alerts.yml
+groups:
+  - name: stellar-health
+    rules:
+      - alert: StellarHealthIngestionLagging
+        expr: max by (network) (schm_ingestion_lag_ledgers_max) > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Ingestion on {{ $labels.network }} is {{ $value }} ledgers behind'
+          description: 'The slowest active contract has fallen behind the network. Check RPC health and worker logs.'
+
+      - alert: StellarHealthIngestErrors
+        expr: sum by (network) (rate(schm_ingest_runs_total{result="error"}[10m])) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Ingestion errors on {{ $labels.network }}'
+          description: 'More than 3 failed ingestion runs per minute for 10 minutes, usually an RPC problem.'
+
+      - alert: StellarHealthIngestionGap
+        expr: increase(schm_ingestion_gaps_total[1h]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Events were lost on {{ $labels.network }}'
+          description: 'Ingestion resumed from the oldest ledger the RPC still retains. Events in between were not stored.'
+
+      - alert: StellarHealthNotificationsFailing
+        expr: sum by (type) (increase(schm_notification_deliveries_total{result="failed"}[15m])) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.type }} notifications are failing'
+          description: 'At least one notification exhausted its retries in the last 15 minutes. See Alert history.'
+
+      - alert: StellarHealthQueueBacklog
+        expr: sum by (queue) (schm_queue_jobs{state="waiting"}) > 500
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Queue {{ $labels.queue }} has {{ $value }} waiting jobs'
+          description: 'Jobs are queuing faster than workers process them. Add worker replicas or raise concurrency.'
+
+      - alert: StellarHealthWorkerDown
+        expr: absent(up{job="stellar-health-worker"} == 1)
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'No worker is being scraped'
+          description: 'Ingestion, TTL checks and notifications have stopped.'
+
+      - alert: StellarHealthApiErrors
+        expr: |
+          sum(rate(schm_http_request_duration_seconds_count{status=~"5.."}[5m]))
+            / clamp_min(sum(rate(schm_http_request_duration_seconds_count[5m])), 1e-9) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'More than 5% of API requests fail'
+          description: 'Check API logs for unhandled errors and database health.'
+
+      - alert: StellarHealthRpcSlow
+        expr: |
+          histogram_quantile(0.95, sum by (le, method) (rate(schm_rpc_call_duration_seconds_bucket[10m]))) > 5
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: 'Stellar RPC {{ $labels.method }} p95 above 5s'
+          description: 'The RPC provider is slow. Consider a dedicated provider.'

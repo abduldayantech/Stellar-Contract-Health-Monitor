@@ -1,4 +1,4 @@
-import { sealWebhookConfig, type Prisma } from '@stellar-health/db';
+import { sealDestinationConfig, type Prisma } from '@stellar-health/db';
 import type { WorkerDeps } from './deps';
 
 /** Deletes events older than the retention period in batches, and stale worker heartbeats. */
@@ -28,10 +28,10 @@ export async function pruneOldData(deps: WorkerDeps) {
  */
 export async function encryptLegacySecrets(deps: WorkerDeps): Promise<{ updated: number }> {
   if (!deps.secrets.enabled) return { updated: 0 };
-  const rows = await deps.prisma.notificationDestination.findMany({ where: { type: 'WEBHOOK' } });
+  const rows = await deps.prisma.notificationDestination.findMany();
   let updated = 0;
   for (const row of rows) {
-    const sealed = sealWebhookConfig(deps.secrets, row.config);
+    const sealed = sealDestinationConfig(deps.secrets, row.config);
     if (JSON.stringify(sealed) === JSON.stringify(row.config)) continue;
     await deps.prisma.notificationDestination.update({
       where: { id: row.id },

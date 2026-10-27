@@ -1,0 +1,6 @@
+# Accepted risks for the image scan in CI. Every entry needs a reason and an expiry date.
+
+# Next.js image optimizer RCE. Mitigated: image optimization is disabled and /_next/image returns
+# 404 (apps/web/next.config.ts, apps/web/src/middleware.ts). The fixed release (15.5.28) clears the
+# 14-day minimumReleaseAge guard on 2026-10-28; upgrade then and delete this entry.
+GHSA-2464-fhr4-w9xw exp:2026-10-29
