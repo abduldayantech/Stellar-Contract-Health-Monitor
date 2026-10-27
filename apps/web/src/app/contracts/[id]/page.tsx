@@ -34,7 +34,7 @@ import { ContractLabel } from '@/components/contract-label';
 import { CopyButton } from '@/components/copy-button';
 import { EventTable } from '@/components/event-table';
 import { ExtendCommand, needsExtending } from '@/components/extend-command';
-import { SilencesSection } from '@/components/silences';
+import { SilencesPanel } from '@/components/silences-panel';
 import { api, errorMessage, useApi } from '@/lib/api';
 import { describeRule } from '@/lib/rules';
 import type { ContractDetail, EventItem, Page, Silence, StorageEntry } from '@/lib/types';
@@ -270,6 +270,13 @@ export default function ContractDetailPage() {
 
       <StorageSection contract={c} onChange={() => contract.mutate()} />
 
+      <SilencesPanel
+        contracts={[c]}
+        rules={c.alertRules}
+        fixedContractRefId={c.id}
+        buttonLabel="Silence for…"
+      />
+
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader
@@ -328,6 +335,7 @@ export default function ContractDetailPage() {
                     <div className="flex items-center gap-2">
                       <SeverityBadge severity={a.severity} />
                       <AlertStatusBadge status={a.status} />
+                      {a.silenced && <Badge tone="slate">silenced</Badge>}
                       <span className="ml-auto text-xs text-slate-500 dark:text-slate-400">
                         {timeAgo(a.triggeredAt)}
                       </span>

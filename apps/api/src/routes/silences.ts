@@ -1,6 +1,5 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { Prisma } from '@stellar-health/db';
 import { createSilenceSchema, updateSilenceSchema } from '@stellar-health/shared-types';
 import { HttpError, notFound } from '../lib/errors';
 import type { AppDeps } from '../app';
@@ -10,17 +9,26 @@ const include = {
   rule: { select: { id: true, name: true, type: true } },
 } as const;
 
-function serializeSilence(silence: Prisma.SilenceGetPayload<{ include: typeof include }>) {
+function serializeSilence(silence: {
+  id: string;
+  contractRefId: string | null;
+  ruleId: string | null;
+  startsAt: Date;
+  endsAt: Date;
+  reason: string;
+  createdBy: string;
+  createdAt: Date;
+  contract?: { id: string; contractId: string; label: string | null; network: string } | null;
+  rule?: { id: string; name: string; type: string } | null;
+}) {
   return {
     id: silence.id,
     contractRefId: silence.contractRefId,
-    contract: silence.contract,
     ruleId: silence.ruleId,
-    rule: silence.rule,
+    contract: silence.contract ?? null,
+    rule: silence.rule ?? null,
     startsAt: silence.startsAt,
     endsAt: silence.endsAt,
-    recurrence: silence.recurrence,
-    timeZone: silence.timeZone,
     reason: silence.reason,
     createdBy: silence.createdBy,
     createdAt: silence.createdAt,
@@ -30,48 +38,32 @@ function serializeSilence(silence: Prisma.SilenceGetPayload<{ include: typeof in
 export async function silenceRoutes(app: FastifyInstance, { prisma }: AppDeps) {
   async function assertScope(contractRefId: string | null, ruleId: string | null) {
     if (!contractRefId && !ruleId)
-      throw new HttpError(400, 'INVALID_SCOPE', 'A contract or rule scope is required');
-    if (contractRefId && !(await prisma.contract.count({ where: { id: contractRefId } })))
-      throw new HttpError(400, 'INVALID_CONTRACT', 'Contract does not exist');
-    if (ruleId) {
-      const rule = await prisma.alertRule.findUnique({ where: { id: ruleId } });
-      if (!rule) throw new HttpError(400, 'INVALID_RULE', 'Alert rule does not exist');
-      if (contractRefId && rule.contractRefId && rule.contractRefId !== contractRefId)
-        throw new HttpError(400, 'INVALID_SCOPE', 'Rule belongs to a different contract');
-    }
+      throw new HttpError(
+        400,
+        'INVALID_SCOPE',
+        'A silence must target a contract, a rule, or both',
+      );
+    const [contractCount, ruleCount] = await Promise.all([
+      contractRefId ? prisma.contract.count({ where: { id: contractRefId } }) : 1,
+      ruleId ? prisma.alertRule.count({ where: { id: ruleId } }) : 1,
+    ]);
+    if (!contractCount) throw new HttpError(400, 'INVALID_CONTRACT', 'Contract does not exist');
+    if (!ruleCount) throw new HttpError(400, 'INVALID_RULE', 'Alert rule does not exist');
   }
 
-  app.get('/silences', async (req) => {
-    const query = z
-      .object({ contractRefId: z.string().optional(), ruleId: z.string().optional() })
-      .parse(req.query);
-    const filters: Prisma.SilenceWhereInput[] = [];
-    if (query.contractRefId) {
-      const rules = await prisma.alertRule.findMany({
-        where: { OR: [{ contractRefId: query.contractRefId }, { contractRefId: null }] },
-        select: { id: true },
-      });
-      filters.push({
-        OR: [
-          { contractRefId: query.contractRefId },
-          { ruleId: { in: rules.map((rule) => rule.id) } },
-        ],
-      });
-    }
-    if (query.ruleId) filters.push({ ruleId: query.ruleId });
-    const silences = await prisma.silence.findMany({
-      where: filters.length ? { AND: filters } : {},
+  app.get('/silences', async () => {
+    const rows = await prisma.silence.findMany({
       include,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ startsAt: 'desc' }, { createdAt: 'desc' }],
     });
-    return { items: silences.map(serializeSilence) };
+    return { items: rows.map(serializeSilence) };
   });
 
   app.get('/silences/:id', async (req) => {
-    const { id } = z.object({ id: z.string() }).parse(req.params);
-    const silence = await prisma.silence.findUnique({ where: { id }, include });
-    if (!silence) throw notFound('Silence');
-    return serializeSilence(silence);
+    const { id } = z.object({ id: z.string().min(1) }).parse(req.params);
+    const row = await prisma.silence.findUnique({ where: { id }, include });
+    if (!row) throw notFound('Silence');
+    return serializeSilence(row);
   });
 
   app.post('/silences', async (req, reply) => {
@@ -79,57 +71,48 @@ export async function silenceRoutes(app: FastifyInstance, { prisma }: AppDeps) {
     const contractRefId = body.contractRefId ?? null;
     const ruleId = body.ruleId ?? null;
     await assertScope(contractRefId, ruleId);
-    const silence = await prisma.silence.create({
+    const row = await prisma.silence.create({
       data: {
         contractRefId,
         ruleId,
         startsAt: body.startsAt,
         endsAt: body.endsAt,
-        recurrence: body.recurrence,
-        timeZone: body.timeZone,
         reason: body.reason,
         createdBy: req.principal!.name,
       },
       include,
     });
     reply.status(201);
-    return serializeSilence(silence);
+    return serializeSilence(row);
   });
 
   app.patch('/silences/:id', async (req) => {
-    const { id } = z.object({ id: z.string() }).parse(req.params);
-    const body = updateSilenceSchema.parse(req.body);
+    const { id } = z.object({ id: z.string().min(1) }).parse(req.params);
+    const patch = updateSilenceSchema.parse(req.body);
     const existing = await prisma.silence.findUnique({ where: { id } });
     if (!existing) throw notFound('Silence');
-    const contractRefId =
-      body.contractRefId === undefined ? existing.contractRefId : body.contractRefId;
-    const ruleId = body.ruleId === undefined ? existing.ruleId : body.ruleId;
-    const startsAt = body.startsAt ?? existing.startsAt;
-    const endsAt = body.endsAt ?? existing.endsAt;
-    if (endsAt <= startsAt)
-      throw new HttpError(400, 'INVALID_TIME_RANGE', 'endsAt must be after startsAt');
+    const body = createSilenceSchema.parse({ ...existing, ...patch });
+    const contractRefId = body.contractRefId ?? null;
+    const ruleId = body.ruleId ?? null;
     await assertScope(contractRefId, ruleId);
-    const silence = await prisma.silence.update({
+    const row = await prisma.silence.update({
       where: { id },
       data: {
         contractRefId,
         ruleId,
-        startsAt,
-        endsAt,
-        recurrence: body.recurrence,
-        timeZone: body.timeZone,
+        startsAt: body.startsAt,
+        endsAt: body.endsAt,
         reason: body.reason,
       },
       include,
     });
-    return serializeSilence(silence);
+    return serializeSilence(row);
   });
 
   app.delete('/silences/:id', async (req, reply) => {
-    const { id } = z.object({ id: z.string() }).parse(req.params);
-    if (!(await prisma.silence.findUnique({ where: { id }, select: { id: true } })))
-      throw notFound('Silence');
-    await prisma.silence.delete({ where: { id } });
+    const { id } = z.object({ id: z.string().min(1) }).parse(req.params);
+    const deleted = await prisma.silence.deleteMany({ where: { id } });
+    if (!deleted.count) throw notFound('Silence');
     reply.status(204);
   });
 }

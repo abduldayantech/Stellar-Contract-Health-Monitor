@@ -237,10 +237,10 @@ describe('RPC failover', () => {
 });
 
 describe('event alert rules', () => {
-  it('records alerts during an active silence without creating deliveries', async () => {
+  it('records alerts during an active silence without creating deliveries and resumes after expiry', async () => {
     const c = await createContract(9, { createdAt: past(3600_000) });
-    const d = await webhookDestination('https://example.com/hook');
-    const rule = await prisma.alertRule.create({
+    const d = await webhookDestination('https://example.com/silenced-hook');
+    await prisma.alertRule.create({
       data: {
         name: 'Transfers',
         type: 'EVENT_MATCH',
@@ -251,76 +251,33 @@ describe('event alert rules', () => {
         createdAt: past(3600_000),
       },
     });
-    const now = new Date('2026-10-27T09:30:00.000Z');
-    h.setNow(now);
     const silence = await prisma.silence.create({
       data: {
         contractRefId: c.id,
-        startsAt: new Date('2026-10-27T09:00:00.000Z'),
-        endsAt: new Date('2026-10-27T10:00:00.000Z'),
+        startsAt: past(60_000),
+        endsAt: new Date(Date.now() + 60_000),
         reason: 'Planned upgrade',
-        createdBy: 'test',
+        createdBy: 'Test operator',
       },
     });
 
-    h.rpc.emit(c.contractId, 700, ['transfer'], now);
+    h.rpc.emit(c.contractId, 701, ['transfer']);
     await ingestContract(h.deps, c.id);
-    const alert = await prisma.alert.findFirstOrThrow({ include: { deliveries: true } });
-    expect(alert).toMatchObject({ ruleId: rule.id, silenced: true });
-    expect(alert.deliveries).toHaveLength(0);
+    const muted = await prisma.alert.findFirstOrThrow({ include: { deliveries: true } });
+    expect(muted).toMatchObject({ silenced: true });
+    expect(muted.deliveries).toHaveLength(0);
     expect(h.queued).toEqual([]);
 
     await prisma.silence.update({
       where: { id: silence.id },
-      data: {
-        startsAt: new Date(now.getTime() - 120_000),
-        endsAt: new Date(now.getTime() - 60_000),
-      },
+      data: { endsAt: past(1) },
     });
-    h.rpc.emit(c.contractId, 701, ['transfer'], now);
+    h.rpc.emit(c.contractId, 702, ['transfer']);
     await ingestContract(h.deps, c.id);
     const alerts = await prisma.alert.findMany({ include: { deliveries: true } });
     expect(alerts).toHaveLength(2);
-    expect(alerts.some((item) => !item.silenced && item.deliveries.length === 1)).toBe(true);
+    expect(alerts.find((alert) => !alert.silenced)?.deliveries).toHaveLength(1);
     expect(h.queued).toHaveLength(1);
-  });
-
-  it('repeats a daily silence at local time across daylight-saving changes', async () => {
-    const c = await createContract(13, { createdAt: past(3600_000) });
-    const now = new Date('2026-11-02T13:30:00.000Z');
-    h.setNow(now);
-    const rule = await prisma.alertRule.create({
-      data: {
-        name: 'Transfers',
-        type: 'EVENT_MATCH',
-        contractRefId: c.id,
-        cooldownSeconds: 0,
-        config: { topics: ['transfer'] },
-        createdAt: past(3600_000),
-      },
-    });
-    await prisma.silence.create({
-      data: {
-        ruleId: rule.id,
-        startsAt: new Date('2026-10-30T13:00:00.000Z'),
-        endsAt: new Date('2026-10-30T14:00:00.000Z'),
-        recurrence: 'DAILY',
-        timeZone: 'America/New_York',
-        reason: 'Daily maintenance',
-        createdBy: 'test',
-      },
-    });
-
-    h.rpc.emit(c.contractId, 700, ['transfer'], now);
-    await ingestContract(h.deps, c.id);
-    const beforeWindow = await prisma.alert.findFirstOrThrow();
-    expect(beforeWindow.silenced).toBe(false);
-
-    h.setNow(new Date('2026-11-02T14:30:00.000Z'));
-    h.rpc.emit(c.contractId, 701, ['transfer'], new Date('2026-11-02T14:30:00.000Z'));
-    await ingestContract(h.deps, c.id);
-    const alerts = await prisma.alert.findMany({ orderBy: { triggeredAt: 'asc' } });
-    expect(alerts.map((alert) => alert.silenced)).toEqual([false, true]);
   });
 
   it('triggers on matching new events, queues deliveries and respects cooldown', async () => {

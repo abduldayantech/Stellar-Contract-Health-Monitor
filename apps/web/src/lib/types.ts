@@ -90,6 +90,7 @@ export interface Delivery {
 export interface AlertItem {
   id: string;
   status: 'TRIGGERED' | 'ACKNOWLEDGED' | 'RESOLVED';
+  silenced: boolean;
   severity: 'INFO' | 'WARNING' | 'CRITICAL';
   title: string;
   message: string;
@@ -105,6 +106,19 @@ export interface AlertItem {
   rule: { id: string; name: string; type: string } | null;
   contract: { id: string; contractId: string; label: string | null; network: Network } | null;
   deliveries: Delivery[];
+}
+
+export interface Silence {
+  id: string;
+  contractRefId: string | null;
+  ruleId: string | null;
+  contract: { id: string; contractId: string; label: string | null; network: Network } | null;
+  rule: { id: string; name: string; type: string } | null;
+  startsAt: string;
+  endsAt: string;
+  reason: string;
+  createdBy: string;
+  createdAt: string;
 }
 
 export interface ContractDetail extends Contract {

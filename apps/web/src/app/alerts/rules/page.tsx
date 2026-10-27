@@ -16,7 +16,7 @@ import {
 import { PageHeader } from '@/components/app-shell';
 import { DestinationsCard } from '@/components/destinations';
 import { RuleForm } from '@/components/rule-form';
-import { SilencesSection } from '@/components/silences';
+import { SilencesPanel } from '@/components/silences-panel';
 import { api, errorMessage, useApi } from '@/lib/api';
 import { describeRule, RULE_TYPE_LABELS } from '@/lib/rules';
 import type { AlertRule, Contract, Destination, Page, Silence } from '@/lib/types';
@@ -179,6 +179,8 @@ function RulesPage() {
           </ul>
         )}
       </Card>
+
+      <SilencesPanel contracts={contracts.data?.items ?? []} rules={rules.data?.items ?? []} />
 
       <DestinationsCard
         destinations={destinations.data?.items}

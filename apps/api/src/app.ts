@@ -21,6 +21,7 @@ import { contractRoutes } from './routes/contracts';
 import { destinationRoutes } from './routes/destinations';
 import { eventRoutes } from './routes/events';
 import { settingsRoutes } from './routes/settings';
+import { silenceRoutes } from './routes/silences';
 import { statusRoutes } from './routes/status';
 import { silenceRoutes } from './routes/silences';
 

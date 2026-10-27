@@ -252,6 +252,7 @@ model Alert {
   resolvedBy      String?
   /// Optional note left when resolving.
   resolveNote     String?
+  silenced        Boolean                @default(false)
   deliveries      NotificationDelivery[]
 
   @@index([triggeredAt(sort: Desc)])
@@ -260,24 +261,22 @@ model Alert {
   @@index([ruleId])
 }
 
-/// A temporary mute for a contract, a rule, or their intersection.
+/// A temporary mute for one contract, one rule, or a specific contract/rule pair.
 model Silence {
-  id            String             @id @default(cuid())
+  id            String     @id @default(cuid())
   contractRefId String?
-  contract      Contract?          @relation(fields: [contractRefId], references: [id], onDelete: Cascade)
+  contract      Contract?  @relation(fields: [contractRefId], references: [id], onDelete: Cascade)
   ruleId        String?
-  rule          AlertRule?         @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  rule          AlertRule? @relation(fields: [ruleId], references: [id], onDelete: Cascade)
   startsAt      DateTime
   endsAt        DateTime
-  recurrence    SilenceRecurrence?
-  /// IANA timezone used to repeat the local start time.
-  timeZone      String             @default("UTC")
   reason        String
   createdBy     String
-  createdAt     DateTime           @default(now())
+  createdAt     DateTime   @default(now())
 
-  @@index([contractRefId, startsAt, endsAt])
-  @@index([ruleId, startsAt, endsAt])
+  @@index([startsAt, endsAt])
+  @@index([contractRefId])
+  @@index([ruleId])
 }
 
 model NotificationDelivery {

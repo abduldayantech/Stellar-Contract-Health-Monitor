@@ -104,13 +104,11 @@ export const alertRule = z.object({
 export const silence = z.object({
   id: z.string(),
   contractRefId: z.string().nullable(),
-  contract: contractRef.nullable(),
   ruleId: z.string().nullable(),
+  contract: contractRef.nullable(),
   rule: ruleRef.nullable(),
   startsAt: dateTime,
   endsAt: dateTime,
-  recurrence: z.enum(['DAILY', 'WEEKLY']).nullable(),
-  timeZone: z.string(),
   reason: z.string(),
   createdBy: z.string(),
   createdAt: dateTime,
@@ -146,6 +144,7 @@ export const alert = z.object({
   rule: ruleRef.nullable(),
   contract: contractRef.nullable(),
   deliveries: z.array(delivery),
+  silenced: z.boolean(),
 });
 
 export const contractDetail = contract.extend({
