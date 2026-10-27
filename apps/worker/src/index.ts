@@ -48,7 +48,7 @@ async function main() {
     metrics,
     now: () => new Date(),
     secrets: createSecretBox(config.SECRETS_ENCRYPTION_KEY),
-    getClient: createClientFactory(prisma, metrics),
+    getClient: createClientFactory(prisma, metrics, logger),
     mailer: createMailer(config),
     enqueueDelivery: async (deliveryId) => {
       await notificationQueue.add(

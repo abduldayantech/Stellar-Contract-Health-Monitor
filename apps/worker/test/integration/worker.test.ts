@@ -13,7 +13,9 @@ import { deliverNotification } from '../../src/delivery';
 import { checkInactivity } from '../../src/inactivity';
 import { ingestBatch, ingestContract } from '../../src/ingest';
 import { encryptLegacySecrets, pruneOldData } from '../../src/maintenance';
+import { createClientFactory } from '../../src/rpc';
 import { checkStorage } from '../../src/storage';
+import { benchContractId, startMockRpc } from '../../bench/mock-rpc';
 import { createContract, createHarness, type Harness } from './helpers';
 
 const prisma = getPrisma();
@@ -182,6 +184,55 @@ describe('batched ingestion', () => {
     await expect(ingestBatch(h.deps, [a.id, b.id])).rejects.toThrow('rpc exploded');
     const rows = await prisma.contract.findMany();
     expect(rows.map((r) => r.consecutiveFailures)).toEqual([1, 1]);
+  });
+});
+
+describe('RPC failover', () => {
+  it('keeps ingesting from the backup, with no gap, while the primary is down', async () => {
+    // Two providers with identical data; ledgers only advance when the test says so.
+    const opts = { latencyMs: 0, eventPeriod: 1, ledgerMs: 3_600_000 };
+    const primary = await startMockRpc(opts);
+    const backup = await startMockRpc(opts);
+    try {
+      await prisma.networkConfig.create({
+        data: {
+          network: 'TESTNET',
+          rpcUrl: primary.url,
+          fallbackRpcUrls: [backup.url],
+          networkPassphrase: 'Test SDF Network ; September 2015',
+        },
+      });
+      const c = await prisma.contract.create({
+        data: {
+          contractId: benchContractId(7),
+          network: 'TESTNET',
+          startLedger: primary.latestLedger() - 4,
+        },
+      });
+      const deps = { ...h.deps, getClient: createClientFactory(prisma, h.deps.metrics) };
+
+      expect(await ingestContract(deps, c.id)).toMatchObject({ inserted: 5, gap: false });
+      expect(primary.stats().calls.getEvents).toBeGreaterThan(0);
+
+      primary.fail(503);
+      primary.advance(3);
+      backup.advance(3);
+      expect(await ingestContract(deps, c.id)).toMatchObject({ inserted: 3, gap: false });
+
+      const row = await prisma.contract.findUniqueOrThrow({ where: { id: c.id } });
+      expect(row).toMatchObject({ gapDetectedAt: null, eventCount: 8, lastError: null });
+      const ledgers = (
+        await prisma.event.findMany({ where: { contractRefId: c.id }, orderBy: { ledger: 'asc' } })
+      ).map((e) => e.ledger);
+      const first = backup.latestLedger() - 7;
+      expect(ledgers).toEqual(Array.from({ length: 8 }, (_, i) => first + i));
+      expect(await prisma.networkState.findUnique({ where: { network: 'TESTNET' } })).toMatchObject(
+        { activeRpcUrl: backup.url },
+      );
+    } finally {
+      await primary.close();
+      await backup.close();
+    }
   });
 });
 

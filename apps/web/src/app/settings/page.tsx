@@ -28,6 +28,7 @@ import type { Destination, Network, Page, Status } from '@/lib/types';
 interface NetworkSetting {
   network: Network;
   rpcUrl: string;
+  fallbackRpcUrls: string[];
   networkPassphrase: string;
   enabled: boolean;
   source: 'database' | 'environment' | 'default' | 'unconfigured';
@@ -36,8 +37,24 @@ interface NetworkSetting {
     latestLedger: number | null;
     lastCheckedAt: string | null;
     lastError: string | null;
+    activeRpcUrl: string | null;
   } | null;
 }
+
+const hostOf = (url: string) => {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+};
+
+/** Splits a comma, space or newline separated list of URLs. */
+const parseUrls = (text: string) =>
+  text
+    .split(/[\s,]+/)
+    .map((u) => u.trim())
+    .filter(Boolean);
 
 interface Token {
   id: string;
@@ -154,7 +171,7 @@ function RpcProviders() {
     <Card>
       <CardHeader
         title="RPC providers"
-        description="Stellar RPC endpoint used for each network. Changes apply to the worker within 30 seconds."
+        description="Stellar RPC endpoint for each network, with optional backups used when it fails or falls behind. Changes apply to the worker within 30 seconds."
       />
       {isLoading || !data ? (
         <div className="p-4">
@@ -173,9 +190,13 @@ function RpcProviders() {
 
 function NetworkRow({ setting, onSaved }: { setting: NetworkSetting; onSaved: () => void }) {
   const [url, setUrl] = useState(setting.rpcUrl);
+  const savedBackups = setting.fallbackRpcUrls.join(', ');
+  const [backups, setBackups] = useState(savedBackups);
   const [busy, setBusy] = useState<'test' | 'save' | 'reset' | null>(null);
   const [result, setResult] = useState<{ tone: 'green' | 'red'; text: string } | null>(null);
   useEffect(() => setUrl(setting.rpcUrl), [setting.rpcUrl]);
+  useEffect(() => setBackups(savedBackups), [savedBackups]);
+  const active = setting.state?.activeRpcUrl;
 
   async function test() {
     setBusy('test');
@@ -211,7 +232,10 @@ function NetworkRow({ setting, onSaved }: { setting: NetworkSetting; onSaved: ()
     setBusy('save');
     setResult(null);
     try {
-      await api(`/settings/networks/${setting.network}`, { method: 'PUT', body: { rpcUrl: url } });
+      await api(`/settings/networks/${setting.network}`, {
+        method: 'PUT',
+        body: { rpcUrl: url, fallbackRpcUrls: parseUrls(backups) },
+      });
       setResult({ tone: 'green', text: 'Saved' });
       onSaved();
     } catch (err) {
@@ -276,7 +300,7 @@ function NetworkRow({ setting, onSaved }: { setting: NetworkSetting; onSaved: ()
           type="submit"
           size="sm"
           loading={busy === 'save'}
-          disabled={!url || url === setting.rpcUrl}
+          disabled={!url || (url === setting.rpcUrl && backups === savedBackups)}
         >
           Save
         </Button>
@@ -291,7 +315,32 @@ function NetworkRow({ setting, onSaved }: { setting: NetworkSetting; onSaved: ()
             Reset
           </Button>
         )}
+        <div className="basis-full pl-[7.75rem] max-sm:pl-0">
+          <Field
+            label={
+              <span className="text-xs text-slate-500">
+                Backup URLs (optional, comma separated)
+              </span>
+            }
+            htmlFor={`rpc-backup-${setting.network}`}
+          >
+            <Input
+              id={`rpc-backup-${setting.network}`}
+              value={backups}
+              onChange={(e) => setBackups(e.target.value)}
+              placeholder="https://backup-1…, https://backup-2…"
+              className="font-mono"
+            />
+          </Field>
+        </div>
       </form>
+      {active && setting.fallbackRpcUrls.length > 0 && (
+        <p
+          className={`mt-1 text-xs ${active === setting.rpcUrl ? 'text-slate-500' : 'text-amber-600'}`}
+        >
+          {active === setting.rpcUrl ? 'Using the primary provider' : `Failed over to ${active}`}
+        </p>
+      )}
       {result && (
         <p
           className={`mt-1 text-xs ${result.tone === 'green' ? 'text-emerald-600' : 'text-rose-600'}`}
@@ -620,6 +669,24 @@ function SystemStatus() {
                 </span>
               </li>
             ))}
+            {data.networks
+              .filter((n) => n.configured)
+              .map((n) => {
+                const active = n.activeRpcUrl ?? n.rpcUrl;
+                const failedOver = Boolean(n.activeRpcUrl && n.activeRpcUrl !== n.rpcUrl);
+                return (
+                  <li key={n.network} className="flex items-center gap-2">
+                    <StatusDot tone={n.lastError ? 'red' : failedOver ? 'yellow' : 'green'} /> RPC{' '}
+                    {n.network.toLowerCase()}
+                    <span className="ml-auto truncate text-xs text-slate-500" title={active ?? ''}>
+                      {failedOver ? 'backup ' : ''}
+                      {active ? hostOf(active) : '—'}
+                      {n.fallbackRpcUrls.length > 0 &&
+                        ` · ${n.fallbackRpcUrls.length} backup${n.fallbackRpcUrls.length > 1 ? 's' : ''}`}
+                    </span>
+                  </li>
+                );
+              })}
           </ul>
           {data.queues && (
             <Table>

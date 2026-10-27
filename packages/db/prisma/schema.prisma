@@ -63,6 +63,8 @@ enum DeliveryStatus {
 model NetworkConfig {
   network           Network  @id
   rpcUrl            String
+  /// Backup providers, tried in order when the primary fails or falls behind.
+  fallbackRpcUrls   String[] @default([])
   networkPassphrase String
   enabled           Boolean  @default(true)
   updatedAt         DateTime @updatedAt
@@ -70,12 +72,14 @@ model NetworkConfig {
 
 /// Ingestion progress for a network-wide view (health and lag reporting).
 model NetworkState {
-  network            Network   @id
-  latestLedger       Int?
-  oldestLedger       Int?
-  lastCheckedAt      DateTime?
-  lastError          String?
-  updatedAt          DateTime  @updatedAt
+  network       Network   @id
+  latestLedger  Int?
+  oldestLedger  Int?
+  lastCheckedAt DateTime?
+  lastError     String?
+  /// Provider that served the worker's most recent ingestion for this network.
+  activeRpcUrl  String?
+  updatedAt     DateTime  @updatedAt
 }
 
 model Contract {

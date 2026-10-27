@@ -68,6 +68,8 @@ export interface StellarClient {
   getLedgerEntryTtls(
     ledgerKeysXdr: string[],
   ): Promise<{ latestLedger: number; entries: LedgerEntryTtl[] }>;
+  /** The provider URL currently serving calls. */
+  activeRpcUrl?(): string;
 }
 
 export interface StellarRpcClientOptions {
@@ -93,6 +95,10 @@ export class StellarRpcClient implements StellarClient {
       timeout: opts.timeoutMs ?? 15_000,
       headers: opts.headers,
     });
+  }
+
+  activeRpcUrl(): string {
+    return this.opts.rpcUrl;
   }
 
   private async call<T>(method: string, fn: () => Promise<T>): Promise<T> {

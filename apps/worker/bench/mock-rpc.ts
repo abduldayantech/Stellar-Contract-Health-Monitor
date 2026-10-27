@@ -71,8 +71,10 @@ export async function startMockRpc(options: Partial<MockRpcOptions> = {}) {
   const calls = new Map<string, number>();
   const stats = { contractsRequested: 0, eventsServed: 0, errors: 0 };
 
+  let offset = 0;
+  let failStatus: number | null = null;
   const latestLedger = () =>
-    opts.firstLedger + Math.floor((Date.now() - startedAt) / opts.ledgerMs);
+    opts.firstLedger + offset + Math.floor((Date.now() - startedAt) / opts.ledgerMs);
   const oldestLedger = () => Math.max(1, latestLedger() - opts.retentionLedgers + 1);
   const closedAt = (ledger: number) =>
     new Date(startedAt + (ledger - opts.firstLedger) * opts.ledgerMs).toISOString();
@@ -170,6 +172,12 @@ export async function startMockRpc(options: Partial<MockRpcOptions> = {}) {
   }
 
   const server: Server = createServer((req, res) => {
+    if (failStatus !== null) {
+      stats.errors++;
+      res.statusCode = failStatus;
+      res.end('unavailable');
+      return;
+    }
     let body = '';
     req.on('data', (c) => (body += c));
     req.on('end', () => {
@@ -198,6 +206,14 @@ export async function startMockRpc(options: Partial<MockRpcOptions> = {}) {
     url,
     options: opts,
     latestLedger,
+    /** Closes `ledgers` ledgers immediately (in addition to the timed ones). */
+    advance: (ledgers: number) => {
+      offset += ledgers;
+    },
+    /** Answers every request with this HTTP status until called with null, like an outage. */
+    fail: (status: number | null) => {
+      failStatus = status;
+    },
     /** A copy of the counters, for diffing between two points in time. */
     stats: (): MockRpcStats => ({ ...stats, calls: Object.fromEntries(calls) }),
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),

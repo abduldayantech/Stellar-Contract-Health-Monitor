@@ -100,7 +100,7 @@ See [`.env.example`](../.env.example) for every variable. The important ones:
 | `REDIS_URL`                                               | api, worker | Redis 6.2+ with `maxmemory-policy noeviction` (required by BullMQ)                                                                                                                                                   |
 | `SECRETS_ENCRYPTION_KEY`                                  | api, worker | 32-byte key (hex or base64) encrypting webhook secrets at rest. Required in production; both services must use the same key. Back it up: without it, stored webhook secrets cannot be read (rotate them to recover). |
 | `ADMIN_API_TOKEN`                                         | api         | Bootstrap token, ≥ 24 characters in production. Create named tokens in Settings and keep this one for break-glass access.                                                                                            |
-| `TESTNET_RPC_URL`, `MAINNET_RPC_URL`, `FUTURENET_RPC_URL` | api, worker | Defaults exist for testnet and futurenet. Can also be changed at runtime in Settings (picked up by the worker within 30 s).                                                                                          |
+| `TESTNET_RPC_URL`, `MAINNET_RPC_URL`, `FUTURENET_RPC_URL` | api, worker | Defaults exist for testnet and futurenet. A comma-separated list adds backup providers (see [RPC failover](#rpc-failover)). Can also be changed at runtime in Settings (picked up by the worker within 30 s).        |
 | `API_URL`                                                 | web         | Where the dashboard server reaches the API                                                                                                                                                                           |
 | `SESSION_COOKIE_SECURE`                                   | web         | `true` behind HTTPS                                                                                                                                                                                                  |
 | `TRUST_PROXY`                                             | api         | `true` behind a reverse proxy, so rate limiting sees client IPs                                                                                                                                                      |
@@ -114,6 +114,20 @@ See [`.env.example`](../.env.example) for every variable. The important ones:
 | `WEBHOOK_BLOCK_PRIVATE_IPS`                               | worker      | Refuse webhooks to private/loopback addresses. Enable in production.                                                                                                                                                 |
 | `WEBHOOK_TIMEOUT_MS`, `WEBHOOK_MAX_ATTEMPTS`              | worker      | Delivery timeout and retry count                                                                                                                                                                                     |
 | `SMTP_*`                                                  | worker      | Enables email destinations; leave `SMTP_HOST` empty to disable                                                                                                                                                       |
+
+## RPC failover
+
+Each network can have backup RPC providers, set in **Settings → RPC providers** or as a
+comma-separated list (`TESTNET_RPC_URL=https://primary.example,https://backup.example`).
+
+- Calls go to the first healthy provider. When it fails with a network error, timeout, 5xx or
+  rate limit, the call is retried on the next one, and the failed provider is skipped for a minute.
+- Every 30 seconds all providers' `getHealth` are compared; one more than 10 ledgers behind the
+  most advanced is skipped until it catches up. The primary is used again once it is healthy.
+- Event cursors are the same on every provider, so ingestion continues from its saved position
+  with no gap, as long as the backup still retains those ledgers.
+- **Settings → System status** shows which provider each network is using. The worker exports
+  `schm_rpc_failovers_total`, and `schm_rpc_calls_total` is labelled by provider host.
 
 ## Scaling
 

@@ -152,15 +152,17 @@ export async function ingestContract(
         ...(gap ? { gapDetectedAt: now } : {}),
       },
     });
+    const activeRpcUrl = client.activeRpcUrl?.() ?? null;
     if (latestLedger !== null) {
       await prisma.networkState.upsert({
         where: { network },
-        create: { network, latestLedger, oldestLedger, lastCheckedAt: now },
+        create: { network, latestLedger, oldestLedger, lastCheckedAt: now, activeRpcUrl },
         update: {
           latestLedger,
           oldestLedger: oldestLedger ?? undefined,
           lastCheckedAt: now,
           lastError: null,
+          activeRpcUrl,
         },
       });
     }
@@ -298,15 +300,17 @@ export async function ingestBatch(
         data: { lastEventAt, eventCount: { increment: events.length } },
       });
     }
+    const activeRpcUrl = client.activeRpcUrl?.() ?? null;
     if (latestLedger !== null) {
       await prisma.networkState.upsert({
         where: { network },
-        create: { network, latestLedger, oldestLedger, lastCheckedAt: now },
+        create: { network, latestLedger, oldestLedger, lastCheckedAt: now, activeRpcUrl },
         update: {
           latestLedger,
           oldestLedger: oldestLedger ?? undefined,
           lastCheckedAt: now,
           lastError: null,
+          activeRpcUrl,
         },
       });
     }

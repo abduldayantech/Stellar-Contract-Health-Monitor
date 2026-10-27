@@ -89,6 +89,8 @@ export async function statusRoutes(app: FastifyInstance, deps: AppDeps) {
         return {
           network: n.network,
           rpcUrl: n.rpcUrl || null,
+          fallbackRpcUrls: n.fallbackRpcUrls,
+          activeRpcUrl: s?.activeRpcUrl ?? null,
           configured: Boolean(n.rpcUrl) && n.enabled,
           source: n.source,
           latestLedger: s?.latestLedger ?? null,

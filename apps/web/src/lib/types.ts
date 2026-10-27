@@ -149,6 +149,8 @@ export interface Status {
   networks: {
     network: Network;
     rpcUrl: string | null;
+    fallbackRpcUrls: string[];
+    activeRpcUrl: string | null;
     configured: boolean;
     source: string;
     latestLedger: number | null;

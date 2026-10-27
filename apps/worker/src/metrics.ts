@@ -35,14 +35,20 @@ export function createWorkerMetrics() {
     rpcCalls: new client.Counter({
       name: 'schm_rpc_calls_total',
       help: 'Stellar RPC calls',
-      labelNames: ['method', 'result'],
+      labelNames: ['method', 'result', 'provider'],
       registers: [registry],
     }),
     rpcDuration: new client.Histogram({
       name: 'schm_rpc_call_duration_seconds',
       help: 'Stellar RPC call duration (including retries)',
-      labelNames: ['method'],
+      labelNames: ['method', 'provider'],
       buckets: [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30],
+      registers: [registry],
+    }),
+    rpcFailovers: new client.Counter({
+      name: 'schm_rpc_failovers_total',
+      help: 'Times calls for a network moved to a different RPC provider',
+      labelNames: ['network', 'to'],
       registers: [registry],
     }),
     rpcRetries: new client.Counter({

@@ -204,6 +204,8 @@ export const alertActionSchema = z
 
 export const upsertNetworkConfigSchema = z.object({
   rpcUrl: z.string().url(),
+  /** Used in order when the primary fails or falls behind. */
+  fallbackRpcUrls: z.array(z.string().url()).max(4).optional(),
   networkPassphrase: z.string().min(1).max(200).optional(),
   enabled: z.boolean().optional(),
 });
