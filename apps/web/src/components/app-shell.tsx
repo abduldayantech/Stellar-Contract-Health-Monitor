@@ -147,7 +147,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           {nav}
           <ThemeSwitcher className="mx-3 mt-2 flex" />
           <form action="/logout" method="post">
-            <button className="mt-1 w-full rounded-md px-3 py-2 text-left text-sm text-slate-500">
+            <button className="mt-1 w-full rounded-md px-3 py-2 text-left text-sm text-slate-500 dark:text-slate-400">
               Sign out
             </button>
           </form>

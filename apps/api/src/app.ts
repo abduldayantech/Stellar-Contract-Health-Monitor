@@ -1,6 +1,8 @@
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
+import swagger from '@fastify/swagger';
+import swaggerUi from '@fastify/swagger-ui';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import type { PrismaClient, SecretBox } from '@stellar-health/db';
@@ -19,6 +21,12 @@ import { destinationRoutes } from './routes/destinations';
 import { eventRoutes } from './routes/events';
 import { settingsRoutes } from './routes/settings';
 import { statusRoutes } from './routes/status';
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    registeredRoutes: { method: string; url: string }[];
+  }
+}
 
 export interface AppDeps {
   config: ApiConfig;
@@ -48,6 +56,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     requestIdHeader: false,
     genReqId: requestIdFor,
     bodyLimit: 256 * 1024,
+  });
+
+  // Every registered route, so tests can check the OpenAPI document covers them all.
+  const registeredRoutes: { method: string; url: string }[] = [];
+  app.decorate('registeredRoutes', registeredRoutes);
+  app.addHook('onRoute', (route) => {
+    for (const method of [route.method].flat()) registeredRoutes.push({ method, url: route.url });
   });
 
   // Accept an empty body sent as JSON (e.g. `curl -X POST -H 'content-type: application/json'`)
@@ -101,6 +116,16 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   await app.register(authPlugin, { prisma: deps.prisma, adminToken: config.ADMIN_API_TOKEN });
   await registerOpenApi(app);
+
+  // API reference: the OpenAPI document and Swagger UI need no token.
+  const openApi = buildOpenApiDocument({ version: pkg.version });
+  app.addHook('onRoute', (route) => {
+    if (route.url === '/docs' || route.url.startsWith('/docs/'))
+      route.config = { ...route.config, public: true };
+  });
+  await app.register(swagger, { mode: 'static', specification: { document: openApi as never } });
+  await app.register(swaggerUi, { routePrefix: '/docs' });
+  app.get('/openapi.json', { config: { public: true } }, async () => openApi);
 
   await statusRoutes(app, deps);
   await settingsRoutes(app, deps);

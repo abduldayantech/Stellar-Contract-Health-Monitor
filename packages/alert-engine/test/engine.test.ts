@@ -107,6 +107,65 @@ describe('evaluateEventMatch', () => {
   });
 });
 
+describe('value conditions', () => {
+  it('reads nested fields, including array indexes', () => {
+    const value = { amount: '5', to: { id: 'G1' }, list: [{ amount: 7 }] };
+    expect(valueAtPath(value, '')).toBe(value);
+    expect(valueAtPath(value, 'amount')).toBe('5');
+    expect(valueAtPath(value, 'to.id')).toBe('G1');
+    expect(valueAtPath(value, 'list.0.amount')).toBe(7);
+    expect(valueAtPath(value, 'missing.deeper')).toBeUndefined();
+    expect(valueAtPath('scalar', 'amount')).toBeUndefined();
+  });
+
+  it('converts integers exactly and rejects everything else', () => {
+    // i128 amounts arrive as decimal strings beyond Number.MAX_SAFE_INTEGER.
+    expect(toBigInt('170141183460469231731687303715884105727')).toBe(
+      170141183460469231731687303715884105727n,
+    );
+    expect(toBigInt(' -42 ')).toBe(-42n);
+    expect(toBigInt(12)).toBe(12n);
+    expect(toBigInt(2 ** 60)).toBeNull();
+    expect(toBigInt(1.5)).toBeNull();
+    expect(toBigInt('1e9')).toBeNull();
+    expect(toBigInt({ amount: 1 })).toBeNull();
+    expect(toBigInt(null)).toBeNull();
+  });
+
+  it('compares with every operator and never matches non-numeric values', () => {
+    const big = '100000000000000000000';
+    const at = (op: 'gt' | 'gte' | 'lt' | 'lte' | 'eq', value: string, actual: unknown) =>
+      matchesValueCondition({ path: 'amount', op, value }, { amount: actual });
+    expect(at('gt', big, '100000000000000000001')).toBe(true);
+    expect(at('gt', big, big)).toBe(false);
+    expect(at('gte', big, big)).toBe(true);
+    expect(at('lt', '0', '-1')).toBe(true);
+    expect(at('lte', '0', '1')).toBe(false);
+    expect(at('eq', '7', 7)).toBe(true);
+    expect(at('gt', '0', 'not a number')).toBe(false);
+    expect(at('gt', '0', undefined)).toBe(false);
+  });
+
+  it('applies the condition on top of the topic filter', () => {
+    const config = eventMatchConfigSchema.parse({
+      topics: ['transfer'],
+      valueCondition: { path: 'amount', op: 'gte', value: '1000' },
+    });
+    const result = evaluateEventMatch({
+      config,
+      newEvents: [
+        { ...ev(['transfer']), value: { amount: '999' } },
+        { ...ev(['transfer']), value: { amount: '1000' } },
+        { ...ev(['mint']), value: { amount: '5000' } },
+      ],
+      windowEvents: [],
+      now,
+    });
+    expect(result.triggered).toBe(true);
+    expect(result.matched).toHaveLength(1);
+  });
+});
+
 describe('evaluateTtl', () => {
   const entries = [
     { id: '1', label: 'Instance', kind: 'INSTANCE', exists: true, liveUntilLedger: 1100 },

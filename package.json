@@ -19,6 +19,8 @@
     "test": "pnpm -r test",
     "test:integration": "pnpm --workspace-concurrency=1 --filter @stellar-health/api --filter @stellar-health/worker test:integration",
     "test:e2e": "playwright test",
+    "bench:ingest": "pnpm --filter @stellar-health/worker bench:ingest",
+    "soak:testnet": "pnpm --filter @stellar-health/worker soak:testnet",
     "db:generate": "pnpm --filter @stellar-health/db generate",
     "db:migrate": "pnpm --filter @stellar-health/db migrate:dev",
     "db:deploy": "pnpm --filter @stellar-health/db migrate:deploy",
@@ -27,6 +29,7 @@
     "services:down": "docker compose -f docker-compose.dev.yml down"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@eslint/js": "^9.39.0",
     "@playwright/test": "^1.63.0",
     "@types/node": "^22.18.0",

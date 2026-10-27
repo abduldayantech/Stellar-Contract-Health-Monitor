@@ -1,7 +1,3 @@
-/**
- * Response shapes, used only to document the API in the OpenAPI spec.
- * Keep them in step with lib/serialize.ts and the objects the routes return.
- */
 import { z } from 'zod';
 import {
   ALERT_RULE_TYPES,
@@ -10,58 +6,64 @@ import {
   CONTRACT_STATUSES,
   DELIVERY_STATUSES,
   DESTINATION_TYPES,
+  NETWORKS,
   STORAGE_ENTRY_KINDS,
   TOKEN_ROLES,
-  networkSchema,
-  notificationPreferencesSchema,
 } from '@stellar-health/shared-types';
 
-const dateTime = z.string().datetime();
+/**
+ * Response shapes for the OpenAPI document. They mirror the serializers in lib/serialize.ts and
+ * are only used for documentation; responses are not validated against them at runtime.
+ */
+const dateTime = z.string().datetime().describe('ISO 8601 timestamp');
+const nullableDate = dateTime.nullable();
+const network = z.enum(NETWORKS);
 const json = z.unknown().describe('Arbitrary JSON');
 
-export const errorSchema = z.object({
+export const errorResponse = z.object({
   error: z.object({
-    code: z.string().describe('Machine-readable error code, e.g. VALIDATION_ERROR or NOT_FOUND'),
+    code: z.string().describe('Machine-readable code, e.g. VALIDATION_ERROR or NOT_FOUND'),
     message: z.string(),
     details: json.optional(),
   }),
 });
 
-const contractRefSchema = z.object({
+export const page = <T extends z.ZodTypeAny>(item: T) =>
+  z.object({
+    items: z.array(item),
+    nextCursor: z.string().nullable().describe('Pass as `cursor` to get the next page'),
+  });
+export const list = <T extends z.ZodTypeAny>(item: T) => z.object({ items: z.array(item) });
+
+const contractRef = z.object({
   id: z.string(),
   contractId: z.string(),
   label: z.string().nullable(),
-  network: networkSchema,
+  network,
 });
-
-const ruleRefSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  type: z.enum(ALERT_RULE_TYPES),
-});
-
-const destinationRefSchema = z.object({
+const ruleRef = z.object({ id: z.string(), name: z.string(), type: z.enum(ALERT_RULE_TYPES) });
+const destinationRef = z.object({
   id: z.string(),
   name: z.string(),
   type: z.enum(DESTINATION_TYPES),
 });
 
-export const contractSchema = z.object({
+export const contract = z.object({
   id: z.string(),
-  contractId: z.string(),
-  network: networkSchema,
+  contractId: z.string().describe('C… StrKey'),
+  network,
   label: z.string().nullable(),
   status: z.enum(CONTRACT_STATUSES),
-  executableType: z.string().nullable(),
+  executableType: z.enum(['wasm', 'stellar_asset']).nullable(),
   wasmHash: z.string().nullable(),
   startLedger: z.number().int(),
   lastIngestedLedger: z.number().int().nullable(),
   ingestionLagLedgers: z.number().int().nullable(),
-  lastEventAt: dateTime.nullable(),
-  lastPolledAt: dateTime.nullable(),
+  lastEventAt: nullableDate,
+  lastPolledAt: nullableDate,
   lastError: z.string().nullable(),
   consecutiveFailures: z.number().int(),
-  gapDetectedAt: dateTime.nullable(),
+  gapDetectedAt: nullableDate,
   eventCount: z.number().int(),
   openAlerts: z.number().int(),
   nearestExpiryLedgers: z.number().int().nullable(),
@@ -70,7 +72,7 @@ export const contractSchema = z.object({
   updatedAt: dateTime,
 });
 
-export const storageEntrySchema = z.object({
+export const storageEntry = z.object({
   id: z.string(),
   kind: z.enum(STORAGE_ENTRY_KINDS),
   label: z.string(),
@@ -78,81 +80,43 @@ export const storageEntrySchema = z.object({
   exists: z.boolean(),
   liveUntilLedger: z.number().int().nullable(),
   ledgersRemaining: z.number().int().nullable(),
-  estimatedExpiry: dateTime.nullable(),
+  estimatedExpiry: nullableDate,
   lastCheckedLedger: z.number().int().nullable(),
-  lastCheckedAt: dateTime.nullable(),
+  lastCheckedAt: nullableDate,
   lastError: z.string().nullable(),
 });
 
-export const eventSchema = z.object({
-  id: z.string(),
-  eventId: z.string(),
-  contractRefId: z.string(),
-  contractId: z.string().optional(),
-  contractLabel: z.string().nullable(),
-  network: networkSchema,
-  type: z.string(),
-  ledger: z.number().int(),
-  ledgerClosedAt: dateTime,
-  txHash: z.string(),
-  topics: z.array(z.string()),
-  topicsXdr: z.array(z.string()),
-  value: json,
-  valueXdr: z.string(),
-  inSuccessfulContractCall: z.boolean(),
-});
-
-export const destinationSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  type: z.enum(DESTINATION_TYPES),
-  enabled: z.boolean(),
-  config: z.union([
-    z.object({
-      url: z.string(),
-      headers: z.array(z.string()).describe('Header names; values are never returned'),
-      secret: z
-        .string()
-        .nullable()
-        .describe('Masked, except in the response that creates or rotates it'),
-    }),
-    z.object({ to: z.array(z.string()) }),
-  ]),
-  createdAt: dateTime,
-  updatedAt: dateTime,
-});
-
-export const ruleSchema = z.object({
+export const alertRule = z.object({
   id: z.string(),
   name: z.string(),
   type: z.enum(ALERT_RULE_TYPES),
   contractRefId: z.string().nullable(),
-  contract: contractRefSchema.nullable(),
+  contract: contractRef.nullable(),
   enabled: z.boolean(),
   severity: z.enum(ALERT_SEVERITIES),
-  config: json.describe('Rule configuration; its shape depends on `type`'),
+  config: json,
   cooldownSeconds: z.number().int(),
-  destinations: z.array(destinationRefSchema),
+  destinations: z.array(destinationRef),
   createdAt: dateTime,
   updatedAt: dateTime,
 });
 
-export const deliverySchema = z.object({
+export const delivery = z.object({
   id: z.string(),
   alertId: z.string().nullable(),
-  kind: z.string().describe('alert.triggered, alert.resolved or test'),
+  kind: z.enum(['alert.triggered', 'alert.resolved', 'test']),
   status: z.enum(DELIVERY_STATUSES),
   attempts: z.number().int(),
   maxAttempts: z.number().int(),
   responseStatus: z.number().int().nullable(),
   lastError: z.string().nullable(),
-  lastAttemptAt: dateTime.nullable(),
-  deliveredAt: dateTime.nullable(),
+  lastAttemptAt: nullableDate,
+  deliveredAt: nullableDate,
   createdAt: dateTime,
-  destination: destinationRefSchema.nullable(),
+  destination: destinationRef.nullable(),
 });
 
-export const alertSchema = z.object({
+export const alert = z.object({
   id: z.string(),
   status: z.enum(ALERT_STATUSES),
   severity: z.enum(ALERT_SEVERITIES),
@@ -160,28 +124,24 @@ export const alertSchema = z.object({
   message: z.string(),
   context: json,
   triggeredAt: dateTime,
-  acknowledgedAt: dateTime.nullable(),
+  acknowledgedAt: nullableDate,
   acknowledgedBy: z.string().nullable(),
-  resolvedAt: dateTime.nullable(),
-  rule: ruleRefSchema.nullable(),
-  contract: contractRefSchema.nullable(),
-  deliveries: z.array(deliverySchema),
+  resolvedAt: nullableDate,
+  rule: ruleRef.nullable(),
+  contract: contractRef.nullable(),
+  deliveries: z.array(delivery),
 });
 
-export const items = <T extends z.ZodTypeAny>(item: T) => z.object({ items: z.array(item) });
+export const contractDetail = contract.extend({
+  latestLedger: z.number().int().nullable(),
+  storageEntries: z.array(storageEntry),
+  alertRules: z.array(alertRule),
+  recentAlerts: z.array(alert),
+});
 
-export const page = <T extends z.ZodTypeAny>(item: T) =>
-  z.object({
-    items: z.array(item),
-    nextCursor: z.string().nullable().describe('Pass as `cursor` to get the next page'),
-  });
-
-// ---- Contracts ----
-
-export const contractValidationSchema = z.object({
-  valid: z.literal(true),
+export const contractValidation = z.object({
   contractId: z.string(),
-  network: networkSchema,
+  network,
   executableType: z.enum(['wasm', 'stellar_asset']),
   wasmHash: z.string().nullable(),
   instanceLiveUntilLedger: z.number().int().nullable(),
@@ -190,75 +150,123 @@ export const contractValidationSchema = z.object({
   alreadyRegistered: z.string().nullable().describe('ID of the existing registration, if any'),
 });
 
-export const contractDetailSchema = contractSchema.extend({
-  latestLedger: z.number().int().nullable(),
-  storageEntries: z.array(storageEntrySchema),
-  alertRules: z.array(ruleSchema),
-  recentAlerts: z.array(alertSchema),
-});
-
-export const contractActivitySchema = z.object({
+export const activity = z.object({
   bucket: z.enum(['hour', 'day']),
   since: dateTime,
   points: z.array(z.object({ t: dateTime, count: z.number().int() })),
 });
 
-export const queuedSchema = z.object({ queued: z.literal(true) });
+export const event = z.object({
+  id: z.string(),
+  eventId: z.string().describe('RPC event ID'),
+  contractRefId: z.string(),
+  contractId: z.string().optional(),
+  contractLabel: z.string().nullable(),
+  network,
+  type: z.enum(['contract', 'system', 'diagnostic']),
+  ledger: z.number().int(),
+  ledgerClosedAt: dateTime,
+  txHash: z.string(),
+  topics: z.array(z.string()).describe('Display form of each topic'),
+  topicsXdr: z.array(z.string()),
+  value: json.describe('Decoded value; 64/128-bit integers as decimal strings'),
+  valueXdr: z.string(),
+  inSuccessfulContractCall: z.boolean(),
+});
 
-// ---- Events ----
+export const topics = list(z.object({ topic: z.string(), count: z.number().int() }));
 
-export const topicCountsSchema = items(z.object({ topic: z.string(), count: z.number().int() }));
+export const destination = z.object({
+  id: z.string(),
+  name: z.string(),
+  type: z.enum(DESTINATION_TYPES),
+  enabled: z.boolean(),
+  config: z
+    .record(json)
+    .describe(
+      'WEBHOOK: {url, headers (names only), secret (masked; full value only on create/rotate)}. EMAIL: {to}.',
+    ),
+  createdAt: dateTime,
+  updatedAt: dateTime,
+});
+export const destinationWithStats = destination.extend({
+  last7Days: z.record(z.number().int()).describe('Delivery counts by status over the last 7 days'),
+});
 
-// ---- Alerts ----
-
-export const alertSummarySchema = z.object({
-  byStatus: z.record(z.number().int()).describe('Alert counts keyed by status'),
+export const alertSummary = z.object({
+  byStatus: z.record(z.number().int()),
   failedDeliveries: z.number().int(),
 });
 
-// ---- Destinations ----
-
-export const destinationListSchema = items(
-  destinationSchema.extend({
-    last7Days: z.record(z.number().int()).describe('Delivery counts keyed by status'),
+const check = z.object({
+  ok: z.boolean(),
+  latencyMs: z.number(),
+  error: z.string().optional(),
+});
+export const status = z.object({
+  database: check,
+  redis: check,
+  queues: z.record(z.record(z.number().int())).nullable(),
+  workers: z.array(
+    z.object({ name: z.string(), lastBeatAt: dateTime, healthy: z.boolean(), info: json }),
+  ),
+  workerHealthy: z.boolean(),
+  networks: z.array(
+    z.object({
+      network,
+      rpcUrl: z.string().nullable(),
+      configured: z.boolean(),
+      source: z.enum(['database', 'environment', 'default', 'unconfigured']),
+      latestLedger: z.number().int().nullable(),
+      oldestLedger: z.number().int().nullable(),
+      lastCheckedAt: nullableDate,
+      lastError: z.string().nullable(),
+    }),
+  ),
+  totals: z.object({
+    contracts: z.record(z.number().int()).describe('Contract counts by status'),
+    events24h: z.number().int(),
+    openAlerts: z.number().int(),
+    failedDeliveries24h: z.number().int(),
   }),
-);
-
-// ---- Settings ----
-
-const principalSchema = z.object({
-  type: z.enum(['admin', 'token']),
-  id: z.string(),
-  name: z.string(),
-  role: z.enum(TOKEN_ROLES),
 });
 
-export const authMeSchema = z.object({ principal: principalSchema.optional() });
-
-const networkStateSchema = z.object({
-  network: networkSchema,
-  latestLedger: z.number().int().nullable(),
-  oldestLedger: z.number().int().nullable(),
-  lastCheckedAt: dateTime.nullable(),
-  lastError: z.string().nullable(),
-  updatedAt: dateTime,
+export const health = z.object({ status: z.literal('ok') });
+export const ready = z.object({
+  status: z.enum(['ready', 'degraded']),
+  database: z.boolean(),
+  redis: z.boolean(),
 });
 
-const networkSourceSchema = z.enum(['database', 'environment', 'default', 'unconfigured']);
-
-export const networkConfigListSchema = items(
-  z.object({
-    network: networkSchema,
-    rpcUrl: z.string(),
-    networkPassphrase: z.string(),
-    enabled: z.boolean(),
-    source: networkSourceSchema,
-    defaultRpcUrl: z.string().nullable(),
-    state: networkStateSchema.nullable(),
+export const principal = z.object({
+  principal: z.object({
+    type: z.enum(['admin', 'token']),
+    id: z.string(),
+    name: z.string(),
+    role: z.enum(TOKEN_ROLES),
   }),
-);
+});
 
-const rpcProbeSchema = z.object({
+const networkState = z
+  .object({
+    network,
+    latestLedger: z.number().int().nullable(),
+    oldestLedger: z.number().int().nullable(),
+    lastCheckedAt: nullableDate,
+    lastError: z.string().nullable(),
+    updatedAt: dateTime,
+  })
+  .nullable();
+export const networkSetting = z.object({
+  network,
+  rpcUrl: z.string(),
+  networkPassphrase: z.string(),
+  enabled: z.boolean(),
+  source: z.enum(['database', 'environment', 'default', 'unconfigured']),
+  defaultRpcUrl: z.string().nullable(),
+  state: networkState,
+});
+const probe = z.object({
   status: z.string(),
   latestLedger: z.number().int(),
   oldestLedger: z.number().int(),
@@ -266,98 +274,43 @@ const rpcProbeSchema = z.object({
   passphrase: z.string(),
   latencyMs: z.number(),
 });
-
-export const networkConfigSchema = z.object({
-  network: networkSchema,
+export const networkSaved = z.object({
+  network,
   rpcUrl: z.string(),
   networkPassphrase: z.string(),
   enabled: z.boolean(),
   updatedAt: dateTime,
-  probe: rpcProbeSchema,
+  probe,
 });
-
-export const rpcTestResultSchema = z.union([
-  rpcProbeSchema.extend({ ok: z.literal(true) }),
+export const networkProbe = z.union([
+  probe.extend({ ok: z.literal(true) }),
   z.object({ ok: z.literal(false), error: z.string() }),
 ]);
 
-const tokenFields = {
+export const apiToken = z.object({
   id: z.string(),
   name: z.string(),
   role: z.enum(TOKEN_ROLES),
-  prefix: z.string().describe('First characters of the token, to tell tokens apart'),
+  prefix: z.string(),
   createdAt: dateTime,
-};
+  lastUsedAt: nullableDate,
+  revokedAt: nullableDate,
+});
+export const apiTokenCreated = apiToken
+  .pick({ id: true, name: true, role: true, prefix: true, createdAt: true })
+  .extend({ token: z.string().describe('Plaintext token; shown only once') });
 
-export const tokenListSchema = items(
-  z.object({ ...tokenFields, lastUsedAt: dateTime.nullable(), revokedAt: dateTime.nullable() }),
-);
-
-export const createdTokenSchema = z.object({
-  ...tokenFields,
-  token: z.string().describe('The plaintext token. It is only returned once.'),
+export const auditEntry = z.object({
+  id: z.string(),
+  createdAt: dateTime,
+  actorType: z.enum(['admin', 'token']),
+  actorId: z.string(),
+  actorName: z.string(),
+  method: z.string(),
+  route: z.string(),
+  path: z.string(),
+  statusCode: z.number().int(),
+  ip: z.string().nullable(),
 });
 
-export const auditLogPageSchema = page(
-  z.object({
-    id: z.string(),
-    createdAt: dateTime,
-    actorType: z.enum(['admin', 'token']),
-    actorId: z.string(),
-    actorName: z.string(),
-    method: z.string(),
-    route: z.string().describe('Route pattern, e.g. /contracts/:id'),
-    path: z.string(),
-    statusCode: z.number().int(),
-    ip: z.string().nullable(),
-  }),
-);
-
-export { notificationPreferencesSchema };
-
-// ---- Status ----
-
-export const healthSchema = z.object({ status: z.literal('ok') });
-
-export const readySchema = z.object({
-  status: z.enum(['ready', 'degraded']),
-  database: z.boolean(),
-  redis: z.boolean(),
-});
-
-const dependencyCheckSchema = z.object({
-  ok: z.boolean(),
-  latencyMs: z.number(),
-  error: z.string().optional(),
-});
-
-export const statusSchema = z.object({
-  database: dependencyCheckSchema,
-  redis: dependencyCheckSchema,
-  queues: z
-    .record(z.record(z.number().int()))
-    .nullable()
-    .describe('Job counts per queue and state; null when Redis is unreachable'),
-  workers: z.array(
-    z.object({ name: z.string(), lastBeatAt: dateTime, healthy: z.boolean(), info: json }),
-  ),
-  workerHealthy: z.boolean(),
-  networks: z.array(
-    z.object({
-      network: networkSchema,
-      rpcUrl: z.string().nullable(),
-      configured: z.boolean(),
-      source: networkSourceSchema,
-      latestLedger: z.number().int().nullable(),
-      oldestLedger: z.number().int().nullable(),
-      lastCheckedAt: dateTime.nullable(),
-      lastError: z.string().nullable(),
-    }),
-  ),
-  totals: z.object({
-    contracts: z.record(z.number().int()).describe('Contract counts keyed by status'),
-    events24h: z.number().int(),
-    openAlerts: z.number().int(),
-    failedDeliveries24h: z.number().int(),
-  }),
-});
+export const queued = z.object({ queued: z.literal(true) });

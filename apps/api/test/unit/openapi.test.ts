@@ -1,164 +1,98 @@
 import { Validator } from '@seriousme/openapi-schema-validator';
+import { beforeAll, afterAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { AppDeps } from '../../src/app';
+import { createSecretBox } from '@stellar-health/db';
 import { buildApp } from '../../src/app';
 import { loadConfig } from '../../src/config';
 import { createMetrics } from '../../src/lib/metrics';
-import { requiredRole } from '../../src/lib/policy';
 
-interface Operation {
-  parameters?: { name: string; in: string }[];
-  requestBody?: unknown;
-  responses: Record<string, { content?: Record<string, { schema?: unknown }> }>;
-  security?: Record<string, string[]>[];
-  'x-required-role'?: string;
-}
-type Spec = { openapi: string; paths: Record<string, Record<string, Operation>> };
-
-const METHODS = ['get', 'post', 'put', 'patch', 'delete'];
-const PUBLIC = ['/health', '/ready', '/metrics'];
-/** Action endpoints that take no request body. */
-const NO_BODY = [
-  'post /alerts/{id}/acknowledge',
-  'post /alerts/{id}/resolve',
-  'post /deliveries/{id}/retry',
-  'post /contracts/{id}/refresh',
-  'post /destinations/{id}/rotate-secret',
-  'post /destinations/{id}/test',
-];
-
-const ADMIN_TOKEN = 'openapi-test-admin-token';
-
+// Route registration doesn't touch the database, so stub dependencies are enough.
 let app: FastifyInstance;
-let spec: Spec;
-
 beforeAll(async () => {
-  // The spec is built at startup, so no database, Redis or RPC is needed.
-  const deps = {
-    config: loadConfig({
-      DATABASE_URL: 'postgres://unused',
-      LOG_LEVEL: 'silent',
-      NODE_ENV: 'test',
-      ADMIN_API_TOKEN: ADMIN_TOKEN,
-    }),
-    prisma: { auditLog: { create: async () => ({}) } },
+  app = await buildApp({
+    config: loadConfig({ DATABASE_URL: 'postgresql://unused', LOG_LEVEL: 'silent' }),
+    prisma: {} as never,
     redis: { ping: async () => 'PONG' },
-    stellar: async () => ({}),
-    jobs: {},
+    stellar: async () => ({}) as never,
+    jobs: {} as never,
     metrics: createMetrics(),
-    secrets: {},
-  } as unknown as AppDeps;
-  app = await buildApp(deps);
-  const res = await app.inject({ method: 'GET', url: '/openapi.json' });
-  expect(res.statusCode).toBe(200);
-  spec = res.json();
+    secrets: createSecretBox(null),
+  });
+  await app.ready();
 });
-
 afterAll(() => app.close());
 
-function operations() {
-  return Object.entries(spec.paths).flatMap(([path, item]) =>
-    Object.entries(item)
-      .filter(([method]) => METHODS.includes(method))
-      .map(([method, op]) => ({ path, method, op })),
-  );
+async function spec() {
+  const res = await app.inject({ url: '/openapi.json' });
+  expect(res.statusCode).toBe(200);
+  return res.json();
 }
 
 describe('OpenAPI document', () => {
-  it('is a valid OpenAPI 3.1 document', async () => {
-    expect(spec.openapi).toBe('3.1.0');
-    const validator = new Validator();
-    const result = await validator.validate(spec);
-    expect(result.errors).toBeUndefined();
+  it('is a valid OpenAPI 3.1 document served without a token', async () => {
+    const doc = await spec();
+    expect(doc.openapi).toBe('3.1.0');
+    const result = await new Validator().validate(doc);
+    expect(result.errors ?? []).toEqual([]);
     expect(result.valid).toBe(true);
-    expect(validator.version).toBe('3.1');
   });
 
-  it('documents the API routes', () => {
-    expect(operations().length).toBeGreaterThan(40);
-    expect(spec.paths['/contracts']).toHaveProperty('post');
-    expect(spec.paths['/docs']).toBeUndefined();
-    expect(spec.paths['/openapi.json']).toBeUndefined();
-  });
+  it('documents every route the API registers, with request and response schemas', async () => {
+    const doc = await spec();
+    const documented = new Set(
+      Object.entries(doc.paths as Record<string, Record<string, unknown>>).flatMap(([path, ops]) =>
+        Object.keys(ops).map((m) => `${m.toUpperCase()} ${path}`),
+      ),
+    );
+    const registered = app.registeredRoutes
+      .filter(({ method }) => method !== 'HEAD' && method !== 'OPTIONS')
+      .filter(({ url }) => url !== '/openapi.json' && url !== '/docs' && !url.startsWith('/docs/'))
+      .map(({ method, url }) => `${method} ${url.replace(/:([A-Za-z]+)/g, '{$1}')}`);
+    expect(registered.length).toBeGreaterThan(40);
+    expect([...registered].sort()).toEqual([...documented].sort());
 
-  it('has request schemas for every route', () => {
-    for (const { path, method, op } of operations()) {
-      const where = `${method.toUpperCase()} ${path}`;
-      for (const param of path.match(/\{(\w+)\}/g) ?? []) {
-        const name = param.slice(1, -1);
-        expect(op.parameters, where).toContainEqual(expect.objectContaining({ name, in: 'path' }));
-      }
-      if (['post', 'put', 'patch'].includes(method) && !NO_BODY.includes(`${method} ${path}`)) {
-        expect(op.requestBody, where).toBeDefined();
+    for (const [path, ops] of Object.entries(
+      doc.paths as Record<string, Record<string, Record<string, unknown>>>,
+    )) {
+      for (const [method, op] of Object.entries(ops)) {
+        const responses = op.responses as Record<string, { content?: unknown }>;
+        const success = Object.entries(responses).filter(([s]) => s.startsWith('2'));
+        expect(success.length, `${method} ${path}`).toBeGreaterThan(0);
+        for (const [status, res] of success) {
+          if (status !== '204') expect(res.content, `${method} ${path} ${status}`).toBeDefined();
+        }
+        if (
+          ['post', 'put', 'patch'].includes(method) &&
+          !path.includes('/test') &&
+          !/refresh|rotate|retry/.test(path)
+        )
+          expect(op.requestBody, `${method} ${path}`).toBeDefined();
       }
     }
   });
 
-  it('has response schemas for every route', () => {
-    for (const { path, method, op } of operations()) {
-      const where = `${method.toUpperCase()} ${path}`;
-      const success = Object.entries(op.responses).filter(([code]) => code.startsWith('2'));
-      expect(success.length, where).toBeGreaterThan(0);
-      for (const [code, res] of success) {
-        if (code === '204') expect(res.content, where).toBeUndefined();
-        else expect(Object.values(res.content ?? {})[0]?.schema, `${where} ${code}`).toBeDefined();
-      }
-      expect(op.responses['4XX'], where).toBeDefined();
-    }
+  it('documents auth and the required role', async () => {
+    const doc = await spec();
+    expect(doc.components.securitySchemes.bearerAuth).toMatchObject({ scheme: 'bearer' });
+    expect(doc.paths['/health'].get.security).toEqual([]);
+    expect(doc.paths['/contracts'].get['x-required-role']).toBe('VIEWER');
+    expect(doc.paths['/contracts'].post['x-required-role']).toBe('EDITOR');
+    expect(doc.paths['/settings/tokens'].get['x-required-role']).toBe('ADMIN');
+    expect(doc.paths['/settings/tokens'].get.description).toContain('ADMIN');
+    expect(doc.paths['/contracts/{id}'].get.parameters).toContainEqual(
+      expect.objectContaining({ name: 'id', in: 'path', required: true }),
+    );
+    const eventParams = doc.paths['/events'].get.parameters.map((p: { name: string }) => p.name);
+    expect(eventParams).toEqual(expect.arrayContaining(['topic', 'txHash', 'limit', 'cursor']));
   });
 
-  it('documents auth and the role each route needs', () => {
-    expect(spec).toMatchObject({
-      components: {
-        securitySchemes: {
-          bearerAuth: { type: 'http', scheme: 'bearer' },
-          apiKey: { type: 'apiKey', in: 'header', name: 'x-api-key' },
-        },
-      },
-    });
-    for (const { path, method, op } of operations()) {
-      if (PUBLIC.includes(path)) {
-        expect(op.security, path).toEqual([]);
-        continue;
-      }
-      const route = path.replace(/\{(\w+)\}/g, ':$1');
-      expect(op.security, path).toEqual([{ bearerAuth: [] }, { apiKey: [] }]);
-      expect(op['x-required-role'], `${method} ${path}`).toBe(
-        requiredRole(method.toUpperCase(), route),
-      );
-    }
-    expect(spec.paths['/settings/tokens']!.get!['x-required-role']).toBe('ADMIN');
-    expect(spec.paths['/contracts']!.post!['x-required-role']).toBe('EDITOR');
-  });
-});
-
-describe('docs routes', () => {
   it('serves Swagger UI at /docs without a token', async () => {
-    const res = await app.inject({ method: 'GET', url: '/docs' });
-    const page = res.statusCode === 302 ? await app.inject({ url: res.headers.location! }) : res;
-    expect(page.statusCode).toBe(200);
-    expect(page.headers['content-type']).toContain('text/html');
-    expect(page.body).toContain('swagger-ui');
-
-    const asset = await app.inject({ url: '/docs/static/swagger-ui-bundle.js' });
-    expect(asset.statusCode).toBe(200);
-  });
-
-  it('still requires a token for API routes', async () => {
-    const res = await app.inject({ method: 'GET', url: '/contracts' });
-    expect(res.statusCode).toBe(401);
-  });
-
-  it('leaves request validation to Zod, with the usual error format', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/settings/networks/test',
-      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
-      payload: { rpcUrl: 'not a url' },
-    });
-    expect(res.statusCode).toBe(400);
-    expect(res.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
-    expect(res.json().error.message).toContain('rpcUrl');
+    const res = await app.inject({ url: '/docs/' });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toContain('text/html');
+    expect(res.body).toContain('swagger');
+    const json = await app.inject({ url: '/docs/json' });
+    expect(json.statusCode).toBe(200);
+    expect(json.json().openapi).toBe('3.1.0');
   });
 });

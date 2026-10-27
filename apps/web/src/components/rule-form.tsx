@@ -309,7 +309,7 @@ export function RuleForm({
                   onChange={(e) => setTtlDays(e.target.value)}
                 />
               </Field>
-              <p className="text-xs text-slate-500 sm:col-span-2 sm:self-center">
+              <p className="text-xs text-slate-500 dark:text-slate-400 sm:col-span-2 sm:self-center">
                 Applies to the contract instance, its WASM code and any storage entries you add on
                 the contract page. Already-expired entries escalate to critical.
               </p>
@@ -334,7 +334,7 @@ export function RuleForm({
                   onChange={(e) => setIdleHours(e.target.value)}
                 />
               </Field>
-              <p className="text-xs text-slate-500 sm:col-span-2 sm:self-center">
+              <p className="text-xs text-slate-500 dark:text-slate-400 sm:col-span-2 sm:self-center">
                 The alert resolves automatically when the contract emits events again.
               </p>
             </div>
@@ -359,7 +359,7 @@ export function RuleForm({
           <div className="sm:col-span-2">
             <p className="mb-1 text-xs font-medium text-slate-700 dark:text-slate-300">Notify</p>
             {destinations.length === 0 ? (
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
                 No destinations yet — add a webhook below. Alerts are still recorded in history.
               </p>
             ) : (
@@ -377,7 +377,9 @@ export function RuleForm({
                       }
                     />
                     {d.name}{' '}
-                    <span className="text-xs text-slate-500">({d.type.toLowerCase()})</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400">
+                      ({d.type.toLowerCase()})
+                    </span>
                   </label>
                 ))}
               </div>

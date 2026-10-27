@@ -11,6 +11,7 @@ import {
 import { openDestinationConfig } from '@stellar-health/db';
 import { chatMessage, slackMessage } from './chat';
 import type { WorkerDeps } from './deps';
+import { recordDestinationFailure, recordDestinationSuccess } from './destination-health';
 import { assertPublicUrl } from './ssrf';
 
 /** Delivery failed in a way retries cannot fix (bad config, 4xx response, disabled destination). */
@@ -212,6 +213,7 @@ export async function deliverNotification(
       },
     });
     deps.metrics.deliveries.labels(type, 'success').inc();
+    await recordDestinationSuccess(deps, delivery.destinationId);
     return 'sent';
   } catch (err) {
     const permanent = err instanceof PermanentDeliveryError;
@@ -231,6 +233,11 @@ export async function deliverNotification(
       },
     });
     deps.metrics.deliveries.labels(type, final ? 'failed' : 'retry').inc();
+    if (final && delivery.kind !== 'test') {
+      await recordDestinationFailure(deps, delivery.destinationId, message.slice(0, 300)).catch(
+        (e: unknown) => deps.logger.error({ err: e, deliveryId }, 'failed to record failure'),
+      );
+    }
     deps.logger.warn(
       { deliveryId, attempt: attempt.number, final, err: message },
       'notification delivery failed',

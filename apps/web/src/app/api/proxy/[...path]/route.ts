@@ -49,6 +49,8 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
     headers: {
       'content-type': res.headers.get('content-type') ?? 'application/json',
       'cache-control': 'no-store',
+      // Exports name their file here; without it the browser saves the download as "proxy".
+      ...(disposition ? { 'content-disposition': disposition } : {}),
       ...(res.headers.get('x-request-id')
         ? { 'x-request-id': res.headers.get('x-request-id') as string }
         : {}),
