@@ -676,6 +676,38 @@ describe('alert rules, destinations and alert history', () => {
     expect(rotated.config.secret).not.toBe(d.config.secret);
   });
 
+  it('re-enabling an automatically disabled destination resets its failure count', async () => {
+    const d = await webhook();
+    await ctx.prisma.notificationDestination.update({
+      where: { id: d.id },
+      data: {
+        enabled: false,
+        consecutiveFailures: 20,
+        firstFailureAt: new Date(Date.now() - 2 * 86400_000),
+        disabledReason: 'Disabled automatically after 20 failed deliveries in a row',
+        disabledAt: new Date(),
+      },
+    });
+    const listed = (await ctx.app.inject({ url: '/destinations', headers: auth })).json();
+    expect(listed.items.find((x: { id: string }) => x.id === d.id)).toMatchObject({
+      enabled: false,
+      consecutiveFailures: 20,
+      disabledReason: expect.stringContaining('20 failed deliveries'),
+    });
+    const res = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/destinations/${d.id}`,
+      headers: auth,
+      payload: { enabled: true },
+    });
+    expect(res.json()).toMatchObject({
+      enabled: true,
+      consecutiveFailures: 0,
+      disabledReason: null,
+      disabledAt: null,
+    });
+  });
+
   it('stores webhook secrets and header values encrypted', async () => {
     const res = await ctx.app.inject({
       method: 'POST',

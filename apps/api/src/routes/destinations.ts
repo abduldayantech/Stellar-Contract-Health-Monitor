@@ -77,9 +77,19 @@ export async function destinationRoutes(app: FastifyInstance, { prisma, jobs, se
       if (existing.type === 'WEBHOOK') merged.secret = body.config.secret ?? current.secret;
       config = sealed(destinationConfigSchemas[existing.type].parse(merged));
     }
+    // Re-enabling starts the failure count from scratch and clears an automatic disable.
+    const reset =
+      body.enabled === true
+        ? {
+            consecutiveFailures: 0,
+            firstFailureAt: null,
+            disabledReason: null,
+            disabledAt: null,
+          }
+        : {};
     const d = await prisma.notificationDestination.update({
       where: { id },
-      data: { name: body.name, enabled: body.enabled, config },
+      data: { name: body.name, enabled: body.enabled, config, ...reset },
     });
     return view(d);
   });

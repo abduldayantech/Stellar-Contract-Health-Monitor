@@ -199,8 +199,8 @@ function HistoryPage() {
                       <p className="break-all text-sm font-medium text-slate-900 dark:text-slate-100">
                         {a.title}
                       </p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
-                        {a.rule?.name ?? 'Deleted rule'}
+                      <p className="text-xs text-slate-500">
+                        {a.rule?.name ?? (a.context?.system ? 'System' : 'Deleted rule')}
                         {a.contract && (
                           <>
                             {' · '}

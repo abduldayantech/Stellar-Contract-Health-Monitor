@@ -1,5 +1,9 @@
 # API reference
 
+The API describes itself: `GET /openapi.json` returns an OpenAPI 3.1 document (generated from
+the same Zod schemas that validate requests) and `GET /docs` serves Swagger UI. Both are public.
+Use the document to generate clients, e.g. `npx openapi-typescript http://localhost:4000/openapi.json`.
+
 Base URL: the API service (`http://localhost:4000` in development). All request and response
 bodies are JSON.
 
