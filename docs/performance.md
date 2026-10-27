@@ -63,3 +63,23 @@ burst, 10 minutes of inactivity and instance TTL under 30 days) that deliver to 
 webhook receiver. Every 30 seconds it records lag, errors, alerts, webhook deliveries, API latency
 and memory. At the end it stops the worker and compares every stored event ID with what the RPC
 returns for the same range, and exits non-zero on any missing or extra event.
+
+### Results
+
+60 minutes on 2026-10-27 against `soroban-testnet.stellar.org`, with the 30 contracts that
+emitted the most events (including the native XLM contract, about 26 events per ledger) and one
+hour of backfill each, on the same 2-core Codespace:
+
+| Measure                                     | Result                                       |
+| ------------------------------------------- | -------------------------------------------- |
+| Events stored                               | 67,644                                       |
+| Checked against the RPC: missing / extra    | **0 / 0** (all 30 contracts)                 |
+| Ingestion errors, RPC errors, retries, gaps | 0, 0, 0, 0                                   |
+| Lag after catch-up                          | at most 2 ledgers (one 10 s ingestion tick)  |
+| RPC calls                                   | 1,866 (about 31 per minute)                  |
+| Alerts / signed webhooks delivered          | 30 / 30, every signature valid               |
+| `GET /status`, `/contracts`, `/events`      | at most 114 ms                               |
+| Worker / API memory (RSS)                   | 348 → 362 MB / 187 → 150 MB, no growth trend |
+
+Run it again before a release, or after changes to ingestion, to catch regressions that the mock
+cannot show (provider behaviour, real XDR, retention edges).
