@@ -20,8 +20,10 @@ import {
 } from '@stellar-health/ui';
 import { PageHeader } from '@/components/app-shell';
 import { EventTable } from '@/components/event-table';
-import { qs, useApi } from '@/lib/api';
+import { MAX_PAGE_SIZE, qs, useApi } from '@/lib/api';
 import type { AlertItem, Contract, EventItem, Page, Status } from '@/lib/types';
+
+const PAGE_SIZE = 100;
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -56,10 +58,14 @@ function Overview() {
     return () => window.clearTimeout(id);
   }, [draft, paramsKey, pathname, router]);
 
-  const catalog = useApi<Page<Contract>>('/contracts', { refreshInterval: 15_000 });
-  const contracts = useApi<Page<Contract>>(`/contracts${qs({ search: query || undefined })}`, {
-    refreshInterval: 15_000,
-  });
+  // Every contract, for the summary counts; the grid below loads a page at a time.
+  const catalog = useApi<Page<Contract>>('/contracts?all=1', { refreshInterval: 30_000 });
+  const [limit, setLimit] = useState(PAGE_SIZE);
+  useEffect(() => setLimit(PAGE_SIZE), [query]);
+  const contracts = useApi<Page<Contract>>(
+    `/contracts${qs({ search: query || undefined, limit })}`,
+    { refreshInterval: 15_000, keepPreviousData: true },
+  );
   const events = useApi<Page<EventItem>>('/events?limit=10', { refreshInterval: 10_000 });
   const alerts = useApi<Page<AlertItem>>('/alerts?limit=6', { refreshInterval: 15_000 });
   const status = useApi<Status>('/status', { refreshInterval: 15_000 });
@@ -146,16 +152,35 @@ function Overview() {
                     />
                   </Card>
                 ) : (
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {items.map((c) => (
-                      <ContractSummaryCard
-                        key={c.id}
-                        contract={c}
-                        href={`/contracts/${c.id}`}
-                        LinkComponent={Link}
-                      />
-                    ))}
-                  </div>
+                  <>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {items.map((c) => (
+                        <ContractSummaryCard
+                          key={c.id}
+                          contract={c}
+                          href={`/contracts/${c.id}`}
+                          LinkComponent={Link}
+                        />
+                      ))}
+                    </div>
+                    {contracts.data?.nextCursor &&
+                      (limit < MAX_PAGE_SIZE ? (
+                        <div className="mt-3 flex justify-center">
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            loading={contracts.isLoading}
+                            onClick={() => setLimit((l) => Math.min(l + PAGE_SIZE, MAX_PAGE_SIZE))}
+                          >
+                            Show more
+                          </Button>
+                        </div>
+                      ) : (
+                        <p className="mt-3 text-center text-xs text-slate-500">
+                          Showing the newest {MAX_PAGE_SIZE}. Search to find others.
+                        </p>
+                      ))}
+                  </>
                 )}
               </>
             )}

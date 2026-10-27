@@ -20,6 +20,9 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
     authorization: `Bearer ${token}`,
     accept: 'application/json',
   };
+  // The API validates the ID and generates one when it is missing or unsafe.
+  const requestId = req.headers.get('x-request-id');
+  if (requestId) headers['x-request-id'] = requestId;
   // Only forward a body (and its content type) when there is one: the API rejects
   // an empty body labelled as JSON, which is what bodiless POSTs like "acknowledge" send.
   const body = req.method !== 'GET' && req.method !== 'HEAD' ? await req.text() : '';
@@ -46,6 +49,9 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
     headers: {
       'content-type': res.headers.get('content-type') ?? 'application/json',
       'cache-control': 'no-store',
+      ...(res.headers.get('x-request-id')
+        ? { 'x-request-id': res.headers.get('x-request-id')! }
+        : {}),
     },
   });
 }

@@ -17,52 +17,45 @@ export class HttpError extends Error {
 export const notFound = (what: string) => new HttpError(404, 'NOT_FOUND', `${what} not found`);
 
 export function errorHandler(err: FastifyError | Error, req: FastifyRequest, reply: FastifyReply) {
+  // Every error body names the request, so a report can be matched to the API logs.
+  const send = (status: number, error: { code: string; message: string; details?: unknown }) =>
+    reply.status(status).send({ error: { ...error, requestId: req.id } });
+
   if (err instanceof ZodError) {
-    return reply.status(400).send({
-      error: {
-        code: 'VALIDATION_ERROR',
-        message: err.issues
-          .map((i) => (i.path.length ? `${i.path.join('.')}: ${i.message}` : i.message))
-          .join('; '),
-        details: err.issues,
-      },
+    return send(400, {
+      code: 'VALIDATION_ERROR',
+      message: err.issues
+        .map((i) => (i.path.length ? `${i.path.join('.')}: ${i.message}` : i.message))
+        .join('; '),
+      details: err.issues,
     });
   }
   if (err instanceof HttpError) {
-    return reply
-      .status(err.statusCode)
-      .send({ error: { code: err.code, message: err.message, details: err.details } });
+    return send(err.statusCode, { code: err.code, message: err.message, details: err.details });
   }
   if (err instanceof RpcError) {
     req.log.warn({ err }, 'RPC error');
-    return reply.status(502).send({
-      error: {
-        code: 'RPC_ERROR',
-        message: `Stellar RPC error: ${err.message}`,
-        details: { kind: err.kind },
-      },
+    return send(502, {
+      code: 'RPC_ERROR',
+      message: `Stellar RPC error: ${err.message}`,
+      details: { kind: err.kind },
     });
   }
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
     if (err.code === 'P2025')
-      return reply
-        .status(404)
-        .send({ error: { code: 'NOT_FOUND', message: 'Resource not found' } });
+      return send(404, { code: 'NOT_FOUND', message: 'Resource not found' });
     if (err.code === 'P2002')
-      return reply
-        .status(409)
-        .send({ error: { code: 'CONFLICT', message: 'Resource already exists' } });
+      return send(409, { code: 'CONFLICT', message: 'Resource already exists' });
     if (err.code === 'P2003')
-      return reply.status(400).send({
-        error: { code: 'INVALID_REFERENCE', message: 'Referenced resource does not exist' },
+      return send(400, {
+        code: 'INVALID_REFERENCE',
+        message: 'Referenced resource does not exist',
       });
   }
   const fe = err as FastifyError;
   if (fe.statusCode && fe.statusCode < 500) {
-    return reply
-      .status(fe.statusCode)
-      .send({ error: { code: fe.code ?? 'BAD_REQUEST', message: fe.message } });
+    return send(fe.statusCode, { code: fe.code ?? 'BAD_REQUEST', message: fe.message });
   }
   req.log.error({ err }, 'Unhandled error');
-  return reply.status(500).send({ error: { code: 'INTERNAL', message: 'Internal server error' } });
+  return send(500, { code: 'INTERNAL', message: 'Internal server error' });
 }

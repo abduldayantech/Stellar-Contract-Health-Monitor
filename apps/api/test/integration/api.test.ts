@@ -154,6 +154,45 @@ describe('status and auth', () => {
   });
 });
 
+describe('request IDs', () => {
+  it('returns an ID on every response, including errors, and echoes safe incoming IDs', async () => {
+    const ok = await ctx.app.inject({ method: 'GET', url: '/health' });
+    expect(ok.headers['x-request-id']).toMatch(/^[0-9a-f-]{36}$/);
+
+    const echoed = await ctx.app.inject({
+      method: 'GET',
+      url: '/contracts/nope',
+      headers: { ...auth, 'x-request-id': 'support-ticket-42' },
+    });
+    expect(echoed.statusCode).toBe(404);
+    expect(echoed.headers['x-request-id']).toBe('support-ticket-42');
+    expect(echoed.json().error.requestId).toBe('support-ticket-42');
+
+    const unauthorized = await ctx.app.inject({ method: 'GET', url: '/contracts' });
+    expect(unauthorized.statusCode).toBe(401);
+    expect(unauthorized.json().error.requestId).toBe(unauthorized.headers['x-request-id']);
+
+    const missingRoute = await ctx.app.inject({
+      method: 'GET',
+      url: '/no-such-route',
+      headers: auth,
+    });
+    expect(missingRoute.json().error.requestId).toBe(missingRoute.headers['x-request-id']);
+  });
+
+  it('replaces unsafe or oversized incoming IDs', async () => {
+    for (const bad of ['has spaces', '<script>', 'x'.repeat(129), 'semi;colon']) {
+      const res = await ctx.app.inject({
+        method: 'GET',
+        url: '/health',
+        headers: { 'x-request-id': bad },
+      });
+      expect(res.headers['x-request-id']).not.toBe(bad);
+      expect(res.headers['x-request-id']).toMatch(/^[0-9a-f-]{36}$/);
+    }
+  });
+});
+
 describe('roles and audit log', () => {
   async function tokenFor(role: 'VIEWER' | 'EDITOR' | 'ADMIN') {
     const res = await ctx.app.inject({
@@ -246,6 +285,49 @@ describe('roles and audit log', () => {
 });
 
 describe('contract registry', () => {
+  it('pages through every contract exactly once, newest first', async () => {
+    // Identical creation times check that the id tie-breaker keeps pages stable.
+    const createdAt = new Date('2026-01-01T00:00:00Z');
+    await ctx.prisma.contract.createMany({
+      data: Array.from({ length: 7 }, (_, i) => ({
+        contractId: contractId(100 + i),
+        network: 'TESTNET' as const,
+        startLedger: 1,
+        createdAt: i < 4 ? createdAt : new Date(createdAt.getTime() + i * 1000),
+      })),
+    });
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    let pages = 0;
+    do {
+      const res = await ctx.app.inject({
+        method: 'GET',
+        url: `/contracts?limit=3${cursor ? `&cursor=${cursor}` : ''}`,
+        headers: auth,
+      });
+      expect(res.statusCode).toBe(200);
+      const body = res.json() as { items: { id: string }[]; nextCursor: string | null };
+      seen.push(...body.items.map((c) => c.id));
+      cursor = body.nextCursor;
+      pages++;
+    } while (cursor);
+    expect(pages).toBe(3);
+    expect(seen).toHaveLength(7);
+    expect(new Set(seen).size).toBe(7);
+
+    const all = await ctx.app.inject({ method: 'GET', url: '/contracts', headers: auth });
+    const body = all.json() as { items: { id: string }[]; nextCursor: string | null };
+    expect(body.items.map((c) => c.id)).toEqual(seen);
+    expect(body.nextCursor).toBeNull();
+
+    const tooBig = await ctx.app.inject({
+      method: 'GET',
+      url: '/contracts?limit=501',
+      headers: auth,
+    });
+    expect(tooBig.statusCode).toBe(400);
+  });
+
   it('validates contract IDs before touching the network', async () => {
     const res = await ctx.app.inject({
       method: 'POST',

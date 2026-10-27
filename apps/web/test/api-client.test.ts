@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { api, ApiError, qs } from '@/lib/api';
+import { api, ApiError, fetchAllPages, qs } from '@/lib/api';
 
 const fetchMock = vi.fn();
 vi.stubGlobal('fetch', fetchMock);
@@ -21,6 +21,18 @@ describe('api client', () => {
     expect(url).toBe('/api/proxy/contracts');
     expect(withBody.headers).toEqual({ 'content-type': 'application/json' });
     expect(withBody.body).toBe('{"label":"x"}');
+  });
+
+  it('follows nextCursor to collect every page', async () => {
+    fetchMock
+      .mockResolvedValueOnce(json(200, { items: [{ id: 'a' }, { id: 'b' }], nextCursor: 'b' }))
+      .mockResolvedValueOnce(json(200, { items: [{ id: 'c' }], nextCursor: null }));
+    const all = await fetchAllPages<{ id: string }>('/contracts?all=1&network=TESTNET');
+    expect(all.items.map((i) => i.id)).toEqual(['a', 'b', 'c']);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      '/api/proxy/contracts?network=TESTNET&limit=500',
+      '/api/proxy/contracts?network=TESTNET&limit=500&cursor=b',
+    ]);
   });
 
   it('maps API errors and handles 204', async () => {

@@ -29,7 +29,7 @@ function EventsExplorer() {
     setDraft(Object.fromEntries(FILTER_KEYS.map((k) => [k, params.get(k) ?? ''])) as Filters);
   }, [paramsKey]);
 
-  const contracts = useApi<Page<Contract>>('/contracts');
+  const contracts = useApi<Page<Contract>>('/contracts?all=1');
   const topics = useApi<{ items: { topic: string; count: number }[] }>(
     `/events/topics${qs({ contractRefId: applied.contractRefId })}`,
   );

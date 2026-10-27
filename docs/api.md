@@ -40,10 +40,19 @@ never stored. Read it with `GET /audit-log` (admins only) or in **Settings → A
   "error": {
     "code": "VALIDATION_ERROR",
     "message": "txHash: txHash must be 64 hex characters",
-    "details": []
+    "details": [],
+    "requestId": "5b0f1c9e-3f0e-4c47-9c1d-2a4c6e8f9b10"
   }
 }
 ```
+
+### Request IDs
+
+Every response has an `x-request-id` header, and every error body repeats it as
+`error.requestId`. API log lines carry the same value as `requestId`, so include it when
+reporting a problem. Send your own `x-request-id` (up to 128 letters, digits and `._:-`) to trace
+a request end to end; other values are replaced with a generated UUID. The dashboard's proxy
+passes the header through in both directions.
 
 | Status | Codes                                                                                           |
 | ------ | ----------------------------------------------------------------------------------------------- |
@@ -58,8 +67,13 @@ never stored. Read it with `GET /audit-log` (admins only) or in **Settings → A
 
 ## Pagination
 
-List endpoints for events and alerts return `{ "items": [...], "nextCursor": "..." | null }`.
-Pass `cursor=<nextCursor>` to get the next page; `limit` is 1–200 (default 50).
+List endpoints return `{ "items": [...], "nextCursor": "..." | null }`. Pass
+`cursor=<nextCursor>` to get the next page, until `nextCursor` is `null`. Page sizes:
+
+| Endpoint                                | `limit` | Default |
+| --------------------------------------- | ------- | ------- |
+| `/contracts`                            | 1–500   | 100     |
+| `/events`, `/alerts`, `/audit-log`, ... | 1–200   | 50      |
 
 ## Endpoints
 
@@ -79,7 +93,7 @@ Pass `cursor=<nextCursor>` to get the next page; `limit` is 1–200 (default 50)
 | ------ | ----------------------------------------- | ------------------------------------------------------------------------------------- |
 | POST   | `/contracts/validate`                     | `{contractId, network}` – checks format and that the contract exists on chain         |
 | POST   | `/contracts`                              | `{contractId, network, label?, lookbackLedgers?}` – register and start monitoring     |
-| GET    | `/contracts`                              | `?network&status&search`                                                              |
+| GET    | `/contracts`                              | `?network&status&search&limit&cursor` – newest first                                  |
 | GET    | `/contracts/:id`                          | Details, storage entries with TTLs, rules, recent alerts                              |
 | GET    | `/contracts/:id/activity`                 | `?hours=24` – event counts per hour (per day above 72 h)                              |
 | PATCH  | `/contracts/:id`                          | `{label?, status?: ACTIVE\|PAUSED}`                                                   |

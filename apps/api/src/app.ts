@@ -7,6 +7,7 @@ import type { PrismaClient, SecretBox } from '@stellar-health/db';
 import type { ApiConfig } from './config';
 import { authPlugin } from './lib/auth';
 import { errorHandler } from './lib/errors';
+import { REQUEST_ID_HEADER, requestIdFor } from './lib/request-id';
 import type { JobBus } from './lib/jobs';
 import type { ApiMetrics } from './lib/metrics';
 import type { StellarClientFactory } from './lib/stellar';
@@ -43,6 +44,15 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
           },
     trustProxy: config.TRUST_PROXY,
     bodyLimit: 256 * 1024,
+    // The incoming header is validated in requestIdFor rather than trusted as-is.
+    requestIdHeader: false,
+    genReqId: requestIdFor,
+    requestIdLogLabel: 'requestId',
+  });
+
+  // First hook, so every response carries the ID, including 404s, 401s and rate limits.
+  app.addHook('onRequest', async (req, reply) => {
+    reply.header(REQUEST_ID_HEADER, req.id);
   });
 
   // Accept an empty body sent as JSON (e.g. `curl -X POST -H 'content-type: application/json'`)
@@ -66,9 +76,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   app.setErrorHandler(errorHandler);
   app.setNotFoundHandler((req, reply) => {
-    reply
-      .status(404)
-      .send({ error: { code: 'NOT_FOUND', message: `Route ${req.method} ${req.url} not found` } });
+    reply.status(404).send({
+      error: {
+        code: 'NOT_FOUND',
+        message: `Route ${req.method} ${req.url} not found`,
+        requestId: req.id,
+      },
+    });
   });
 
   await app.register(helmet, { contentSecurityPolicy: false });

@@ -45,7 +45,7 @@ function HistoryPage() {
     }
   }, [focus]);
 
-  const contracts = useApi<Page<Contract>>('/contracts');
+  const contracts = useApi<Page<Contract>>('/contracts?all=1');
   const summary = useApi<{ byStatus: Record<string, number>; failedDeliveries: number }>(
     '/alerts/summary',
     { refreshInterval: 15_000 },

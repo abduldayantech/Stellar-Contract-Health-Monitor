@@ -46,6 +46,18 @@ describe('API proxy', () => {
     expect(init.body).toBe('{"a":1}');
   });
 
+  it('passes the request ID to the API and back', async () => {
+    fetchMock.mockResolvedValue(
+      new Response('{}', { status: 200, headers: { 'x-request-id': 'req-from-api' } }),
+    );
+    const req = new NextRequest('http://localhost/api/proxy/status', {
+      headers: { 'x-request-id': 'req-123' },
+    });
+    const res = await GET(req, ctx('status'));
+    expect(fetchMock.mock.calls[0]![1].headers['x-request-id']).toBe('req-123');
+    expect(res.headers.get('x-request-id')).toBe('req-from-api');
+  });
+
   it('rejects requests without a session and reports an unreachable API', async () => {
     cookieValue = undefined;
     const noSession = await GET(

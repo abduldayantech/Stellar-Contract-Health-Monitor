@@ -45,8 +45,38 @@ export async function api<T = unknown>(
   return data as T;
 }
 
+/** Largest page the API serves; used when collecting every page of a list. */
+export const MAX_PAGE_SIZE = 500;
+
+/**
+ * Follows `nextCursor` until the list is complete and returns it as one page. Used for pickers
+ * and fleet-wide counts that need every item.
+ */
+export async function fetchAllPages<T>(path: string): Promise<{ items: T[]; nextCursor: null }> {
+  const [base, query = ''] = path.split('?');
+  const params = new URLSearchParams(query);
+  params.delete('all');
+  params.set('limit', String(MAX_PAGE_SIZE));
+  const items: T[] = [];
+  for (let cursor: string | null = null, i = 0; i === 0 || cursor; i++) {
+    if (cursor) params.set('cursor', cursor);
+    const page: { items: T[]; nextCursor?: string | null } = await api(`${base}?${params}`);
+    items.push(...page.items);
+    cursor = page.nextCursor ?? null;
+  }
+  return { items, nextCursor: null };
+}
+
+/** SWR-backed GET. A path with `all=1` in its query fetches every page of a list. */
 export function useApi<T>(path: string | null, config?: SWRConfiguration<T>) {
-  return useSWR<T>(path, (p: string) => api<T>(p), { revalidateOnFocus: true, ...config });
+  return useSWR<T>(
+    path,
+    (p: string) =>
+      new URLSearchParams(p.split('?')[1]).get('all') === '1'
+        ? (fetchAllPages(p) as Promise<T>)
+        : api<T>(p),
+    { revalidateOnFocus: true, ...config },
+  );
 }
 
 export type Role = 'VIEWER' | 'EDITOR' | 'ADMIN';

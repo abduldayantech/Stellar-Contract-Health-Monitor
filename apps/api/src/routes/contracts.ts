@@ -14,6 +14,7 @@ import {
   ledgerKeyToXdr,
   validateContractId,
 } from '@stellar-health/stellar-client';
+import { toPage } from '../lib/pagination';
 import { HttpError, notFound } from '../lib/errors';
 import {
   serializeAlert,
@@ -22,6 +23,10 @@ import {
   serializeStorageEntry,
 } from '../lib/serialize';
 import type { AppDeps } from '../app';
+
+/** Page size for GET /contracts when `limit` is not given, and the largest allowed. */
+const DEFAULT_CONTRACTS_PAGE = 100;
+const MAX_CONTRACTS_PAGE = 500;
 
 const idParams = z.object({ id: z.string().min(1) });
 
@@ -145,9 +150,16 @@ export async function contractRoutes(app: FastifyInstance, deps: AppDeps) {
         network: z.enum(['TESTNET', 'MAINNET', 'FUTURENET', 'LOCAL']).optional(),
         status: z.enum(['ACTIVE', 'PAUSED', 'ERROR']).optional(),
         search: z.string().max(120).optional(),
+        limit: z.coerce
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_CONTRACTS_PAGE)
+          .default(DEFAULT_CONTRACTS_PAGE),
+        cursor: z.string().max(64).optional(),
       })
       .parse(req.query);
-    const contracts = await prisma.contract.findMany({
+    const rows = await prisma.contract.findMany({
       where: {
         network: q.network,
         status: q.status,
@@ -160,9 +172,12 @@ export async function contractRoutes(app: FastifyInstance, deps: AppDeps) {
             }
           : {}),
       },
-      orderBy: { createdAt: 'desc' },
-      take: 500,
+      // Newest first; the id breaks ties so pages never overlap or skip rows.
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: q.limit + 1,
+      ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}),
     });
+    const { items: contracts, nextCursor } = toPage(rows, q.limit);
     const ids = contracts.map((c) => c.id);
     const [alertCounts, expiries, ledgers] = await Promise.all([
       prisma.alert.groupBy({
@@ -189,6 +204,7 @@ export async function contractRoutes(app: FastifyInstance, deps: AppDeps) {
           nearestExpiryLedgers: latest && minLive ? minLive - latest : null,
         });
       }),
+      nextCursor,
     };
   });
 
