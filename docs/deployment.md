@@ -123,6 +123,8 @@ See [`.env.example`](../.env.example) for every variable. The important ones:
 - **RPC load**: caught-up contracts are polled 25 per `getEvents` call, so 1,000 contracts cost
   about 40 calls per interval. Contracts that are catching up are polled individually. For very
   large fleets use a dedicated RPC provider or raise `INGEST_INTERVAL_MS`.
+- Measured throughput, lag and RPC load for 100 to 5,000 contracts are in
+  [performance.md](performance.md).
 
 ## Monitoring
 

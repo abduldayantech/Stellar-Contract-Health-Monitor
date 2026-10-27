@@ -52,6 +52,26 @@ describe('event ingestion', () => {
     expect(await prisma.event.count({ where: { contractRefId: c.id } })).toBe(13);
   });
 
+  it('records how far it got, not the RPC tip, when the page budget runs out', async () => {
+    h = createHarness({ INGEST_MAX_PAGES: '2' });
+    const c = await createContract(3, { startLedger: 600 });
+    for (let i = 0; i < 20; i++) h.rpc.emit(c.contractId, 700 + i, ['transfer']);
+
+    // 2 pages of 5 events: ledgers 700-709 stored, ledger 709 may continue on the next page.
+    expect(await ingestContract(h.deps, c.id)).toMatchObject({ inserted: 10 });
+    let row = await prisma.contract.findUniqueOrThrow({ where: { id: c.id } });
+    expect(row.lastIngestedLedger).toBe(708);
+
+    expect(await ingestContract(h.deps, c.id)).toMatchObject({ inserted: 10 });
+    row = await prisma.contract.findUniqueOrThrow({ where: { id: c.id } });
+    // Ledger 719 filled the last page exactly, so the tip is confirmed on the next poll.
+    expect(row.lastIngestedLedger).toBe(718);
+    await ingestContract(h.deps, c.id);
+    row = await prisma.contract.findUniqueOrThrow({ where: { id: c.id } });
+    expect(row.lastIngestedLedger).toBe(1000);
+    expect(row.eventCount).toBe(20);
+  });
+
   it('clamps a stale start ledger to the retention window and records a gap when history was lost', async () => {
     const c = await createContract(2, { startLedger: 100 });
     h.rpc.emit(c.contractId, 800, ['x']);
