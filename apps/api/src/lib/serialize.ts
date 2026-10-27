@@ -136,6 +136,7 @@ function safeDestinationConfig(
     case 'EMAIL':
       return { to: config.to };
     case 'SLACK':
+    case 'DISCORD':
       return { webhookUrl: maskUrl(config.webhookUrl) };
   }
 }

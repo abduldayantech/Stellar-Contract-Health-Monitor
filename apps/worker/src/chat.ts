@@ -73,3 +73,33 @@ export function slackMessage(m: ChatMessage) {
     ],
   };
 }
+
+/** Embed colours by severity; resolved alerts are green. */
+export const DISCORD_COLORS = {
+  INFO: 0x3b82f6,
+  WARNING: 0xf59e0b,
+  CRITICAL: 0xef4444,
+  RESOLVED: 0x22c55e,
+} as const;
+
+/** Webhook body with one embed for a Discord channel webhook. */
+export function discordMessage(m: ChatMessage) {
+  return {
+    username: 'Stellar Contract Health',
+    // Alert text comes from contract data; never let it ping @everyone, roles or users.
+    allowed_mentions: { parse: [] as string[] },
+    embeds: [
+      {
+        title: `${m.prefix} ${m.title}`.slice(0, 256),
+        description: m.message.slice(0, 4096),
+        color: m.resolved ? DISCORD_COLORS.RESOLVED : DISCORD_COLORS[m.severity],
+        ...(m.link ? { url: m.link } : {}),
+        fields: [
+          { name: 'Severity', value: m.resolved ? 'Resolved' : m.severity, inline: true },
+          ...(m.contract ? [{ name: 'Contract', value: m.contract.slice(0, 1024) }] : []),
+        ],
+        timestamp: m.triggeredAt,
+      },
+    ],
+  };
+}

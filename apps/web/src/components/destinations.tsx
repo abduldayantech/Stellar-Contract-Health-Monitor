@@ -45,7 +45,7 @@ export function DestinationsCard({
       const config =
         type === 'WEBHOOK'
           ? { url }
-          : type === 'SLACK'
+          : type === 'SLACK' || type === 'DISCORD'
             ? { webhookUrl: url }
             : {
                 to: emails
@@ -84,7 +84,7 @@ export function DestinationsCard({
     <Card>
       <CardHeader
         title="Notification destinations"
-        description="Webhooks receive a signed JSON POST for every alert. Slack posts a formatted message to a channel. Email requires SMTP to be configured on the server."
+        description="Webhooks receive a signed JSON POST for every alert. Slack and Discord post a formatted message to a channel. Email requires SMTP to be configured on the server."
         actions={
           <Button size="sm" variant="secondary" onClick={() => setAdding((a) => !a)}>
             {adding ? 'Cancel' : 'Add destination'}
@@ -106,6 +106,7 @@ export function DestinationsCard({
               <option value="WEBHOOK">Webhook</option>
               <option value="EMAIL">Email</option>
               <option value="SLACK">Slack</option>
+              <option value="DISCORD">Discord</option>
             </Select>
           </Field>
           <Field label="Name" htmlFor="d-name">
@@ -126,6 +127,17 @@ export function DestinationsCard({
                 onChange={(e) => setUrl(e.target.value)}
                 required
                 placeholder="https://hooks.slack.com/services/…"
+              />
+            </Field>
+          ) : type === 'DISCORD' ? (
+            <Field label="Discord webhook URL" htmlFor="d-url">
+              <Input
+                id="d-url"
+                type="url"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                required
+                placeholder="https://discord.com/api/webhooks/…"
               />
             </Field>
           ) : type === 'WEBHOOK' ? (
@@ -179,7 +191,7 @@ export function DestinationsCard({
       ) : !destinations?.length ? (
         <EmptyState
           title="No destinations"
-          description="Add a Slack channel, an email address or a webhook URL to receive alerts."
+          description="Add a Slack or Discord channel, an email address or a webhook URL to receive alerts."
         />
       ) : (
         <ul className="divide-y divide-slate-100 dark:divide-slate-800">
