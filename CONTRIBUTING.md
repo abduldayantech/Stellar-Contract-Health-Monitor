@@ -50,11 +50,32 @@ give icons and meters an accessible name (or `aria-hidden`), pair `text-slate-50
 - Use [Conventional Commits](https://www.conventionalcommits.org/) style messages
   (`feat:`, `fix:`, `docs:`, …).
 
-## Good first issues
+## Finding an issue
 
-- Additional notification channels (Slack, Discord, PagerDuty) as destination types.
-- More rule types, e.g. failed-transaction rate or WASM upgrade detection.
-- Dashboard charts for storage TTL over time.
+- New here? Start with
+  [`good first issue`](https://github.com/abduldayantech/Stellar-Contract-Health-Monitor/labels/good%20first%20issue):
+  small, self-contained tasks that name the files to change and how to test them.
+- Every open task has a `complexity: trivial`, `complexity: medium` or `complexity: high` label.
+- Issues labelled `tracking` are large features split into smaller issues. Pick one of the linked
+  tasks, not the tracking issue itself.
+- Some tasks list a **Depends on** section. Wait until those issues are merged before starting.
+
+## Drips Wave contributors
+
+This repository takes part in [Drips Wave](https://www.drips.network/wave). Issue complexity maps to
+Wave points: Trivial = 100, Medium = 150, High = 200.
+
+1. Apply for the issue through Drips Wave, or comment on it, and **wait to be assigned** before you
+   start. Assigned issues are not open to other contributors.
+2. Work on a branch in your fork and open one focused PR that says `Closes #<issue>`.
+3. Complete the issue's **Pull request checklist**: passing checks, tests for new behaviour, and
+   screenshots for UI changes.
+4. Reviews usually happen within two working days. If you can't finish within the Wave, say so on
+   the issue so it can be reassigned.
+
+Contributions must be your own work, tested, and understood by you. AI-assisted code is fine, but
+low-effort or untested PRs, and PRs that only fix typos to earn points, will be closed. This follows
+the [Drips Wave rules](https://docs.drips.network/wave/terms-and-rules/).
 
 ## Reporting security issues
 
