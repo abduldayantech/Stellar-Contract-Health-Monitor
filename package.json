@@ -29,6 +29,7 @@
     "services:down": "docker compose -f docker-compose.dev.yml down"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@eslint/js": "^9.39.0",
     "@playwright/test": "^1.63.0",
     "@types/node": "^22.18.0",

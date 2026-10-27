@@ -132,6 +132,11 @@ export interface Destination {
     webhookUrl?: string | null;
   };
   last7Days?: Record<string, number>;
+  consecutiveFailures?: number;
+  lastFailureAt?: string | null;
+  /** Why the worker disabled this destination, if it did. */
+  disabledReason?: string | null;
+  disabledAt?: string | null;
   createdAt: string;
 }
 

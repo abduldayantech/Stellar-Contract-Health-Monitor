@@ -683,6 +683,85 @@ describe('webhook delivery', () => {
     ).toBe('FAILED');
   });
 
+  it('disables a destination after repeated failures over the minimum span and raises a system alert', async () => {
+    h = createHarness({
+      DESTINATION_DISABLE_AFTER_FAILURES: '3',
+      DESTINATION_DISABLE_MIN_HOURS: '24',
+    });
+    respond = 500;
+    const failing = await webhookDestination(url);
+    const fallback = await prisma.notificationDestination.create({
+      data: { name: 'mail', type: 'EMAIL', config: { to: ['ops@example.com'] } },
+    });
+    await prisma.setting.create({
+      data: {
+        key: 'notificationPreferences',
+        value: { defaultDestinationIds: [failing.id, fallback.id] },
+      },
+    });
+    const start = new Date('2026-10-01T00:00:00Z');
+    async function failOnce(at: Date) {
+      h.setNow(at);
+      const delivery = await prisma.notificationDelivery.create({
+        data: { destinationId: failing.id, kind: 'alert.triggered' },
+      });
+      await deliverNotification(h.deps, delivery.id, { number: 6, isFinalAttempt: true }).catch(
+        () => {},
+      );
+    }
+    await failOnce(start);
+    await failOnce(new Date(start.getTime() + 3600_000));
+    // Third failure, but only 2h into the streak: not disabled yet.
+    await failOnce(new Date(start.getTime() + 2 * 3600_000));
+    let d = await prisma.notificationDestination.findUniqueOrThrow({ where: { id: failing.id } });
+    expect(d).toMatchObject({ enabled: true, consecutiveFailures: 3 });
+
+    await failOnce(new Date(start.getTime() + 25 * 3600_000));
+    d = await prisma.notificationDestination.findUniqueOrThrow({ where: { id: failing.id } });
+    expect(d.enabled).toBe(false);
+    expect(d.consecutiveFailures).toBe(4);
+    expect(d.disabledReason).toMatch(/after 4 failed deliveries in a row since 2026-10-01/);
+
+    const system = await prisma.alert.findFirstOrThrow({
+      where: { ruleId: null },
+      include: { deliveries: true },
+    });
+    expect(system.title).toBe('Notification destination "hook" was disabled');
+    // The failing destination itself is not notified.
+    expect(system.deliveries.map((x) => x.destinationId)).toEqual([fallback.id]);
+
+    // Later deliveries to the disabled destination don't count or raise more alerts.
+    await failOnce(new Date(start.getTime() + 26 * 3600_000));
+    expect(await prisma.alert.count({ where: { ruleId: null } })).toBe(1);
+  });
+
+  it('resets the failure streak on success and ignores test notifications', async () => {
+    h = createHarness({
+      DESTINATION_DISABLE_AFTER_FAILURES: '2',
+      DESTINATION_DISABLE_MIN_HOURS: '0',
+    });
+    const d = await webhookDestination(url);
+    const deliver = async (kind: string, status: number) => {
+      respond = status;
+      const delivery = await prisma.notificationDelivery.create({
+        data: { destinationId: d.id, kind },
+      });
+      await deliverNotification(h.deps, delivery.id, { number: 6, isFinalAttempt: true }).catch(
+        () => {},
+      );
+    };
+    await deliver('alert.triggered', 500);
+    await deliver('test', 500);
+    expect(
+      (await prisma.notificationDestination.findUniqueOrThrow({ where: { id: d.id } }))
+        .consecutiveFailures,
+    ).toBe(1);
+    await deliver('alert.triggered', 200);
+    await deliver('alert.triggered', 500);
+    const after = await prisma.notificationDestination.findUniqueOrThrow({ where: { id: d.id } });
+    expect(after).toMatchObject({ enabled: true, consecutiveFailures: 1 });
+  });
+
   it('sends test notifications by email', async () => {
     const d = await prisma.notificationDestination.create({
       data: { name: 'mail', type: 'EMAIL', config: { to: ['ops@example.com'] } },

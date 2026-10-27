@@ -31,6 +31,10 @@ const envSchema = z.object({
   WEBHOOK_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60_000).default(10_000),
   WEBHOOK_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(6),
   WEBHOOK_BLOCK_PRIVATE_IPS: bool(false),
+  /** Disable a destination after this many failed deliveries in a row (0 = never). */
+  DESTINATION_DISABLE_AFTER_FAILURES: z.coerce.number().int().min(0).default(20),
+  /** …but only once the failures span at least this many hours. */
+  DESTINATION_DISABLE_MIN_HOURS: z.coerce.number().min(0).default(24),
   NOTIFICATION_CONCURRENCY: z.coerce.number().int().min(1).max(100).default(10),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().default(587),

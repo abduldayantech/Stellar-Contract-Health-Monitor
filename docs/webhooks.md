@@ -80,3 +80,18 @@ Failed deliveries can be retried from **Alert history**.
 - The secret is shown once when the destination is created; rotate it from the Alert rules page.
 - With `WEBHOOK_BLOCK_PRIVATE_IPS=true` (the default in `docker-compose.yml`), webhooks to
   loopback, private, link-local and metadata addresses are refused.
+
+## Destinations that keep failing
+
+Each destination counts its failed deliveries in a row (a delivery fails once all retries are
+used up; test notifications don't count, and any success resets the count). After
+`DESTINATION_DISABLE_AFTER_FAILURES` failures (default 20) spanning at least
+`DESTINATION_DISABLE_MIN_HOURS` (default 24), the worker:
+
+1. disables the destination and records why (shown on the destination in the dashboard and as
+   `disabledReason` in `GET /destinations`), and
+2. raises a **System** alert that is sent to the default destinations from Settings, except the
+   one that was disabled.
+
+Fix the receiver, then press **Re-enable** (or `PATCH /destinations/:id` with
+`{"enabled": true}`), which also resets the failure count.

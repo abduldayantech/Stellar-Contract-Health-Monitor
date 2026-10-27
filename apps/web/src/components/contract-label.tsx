@@ -54,7 +54,7 @@ export function ContractLabel({
             type="button"
             aria-label="Rename contract"
             onClick={start}
-            className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+            className="rounded p-1 text-slate-500 dark:text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
           >
             <svg
               viewBox="0 0 24 24"

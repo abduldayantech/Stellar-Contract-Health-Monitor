@@ -326,7 +326,7 @@ export default function ContractDetailPage() {
                     <div className="flex items-center gap-2">
                       <SeverityBadge severity={a.severity} />
                       <AlertStatusBadge status={a.status} />
-                      <span className="ml-auto text-xs text-slate-500">
+                      <span className="ml-auto text-xs text-slate-500 dark:text-slate-400">
                         {timeAgo(a.triggeredAt)}
                       </span>
                     </div>

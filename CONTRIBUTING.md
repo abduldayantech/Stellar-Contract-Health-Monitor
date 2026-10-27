@@ -25,6 +25,12 @@ pnpm --filter @stellar-health/web build && pnpm test:e2e
 
 CI runs all of these, plus Docker image builds, on every pull request.
 
+The end-to-end suite includes `tests/e2e/a11y.spec.ts`, which runs [axe](https://github.com/dequelabs/axe-core)
+(WCAG 2.1 A/AA) on every dashboard page in light and dark mode and fails on serious or critical
+violations. When it fails, the message lists each rule and the elements involved. Common fixes:
+give icons and meters an accessible name (or `aria-hidden`), pair `text-slate-500` with
+`dark:text-slate-400` for contrast, and put `aria-expanded` on a button rather than a table row.
+
 ## Where things live
 
 - Business rules that don't need I/O go in `packages/alert-engine` or `packages/stellar-client`,

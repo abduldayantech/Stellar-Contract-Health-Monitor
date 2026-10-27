@@ -1,5 +1,4 @@
 import type { FastifyInstance } from 'fastify';
-import { z } from 'zod';
 import type { Prisma } from '@stellar-health/db';
 import { Readable } from 'node:stream';
 import {
@@ -12,6 +11,10 @@ import { notFound } from '../lib/errors';
 import { toPage } from '../lib/pagination';
 import { serializeEvent } from '../lib/serialize';
 import type { AppDeps } from '../app';
+import { doc } from '../openapi';
+import { eventSchema, page, topicCountsSchema } from '../openapi/responses';
+
+const tags = ['Events'];
 
 const EVENT_ORDER: Prisma.EventOrderByWithRelationInput[] = [
   { ledger: 'desc' },
@@ -82,20 +85,32 @@ export async function eventRoutes(app: FastifyInstance, { prisma }: AppDeps) {
           SELECT "topics"[1] AS topic, COUNT(*)::bigint AS count FROM "Event"
           WHERE "contractRefId" = ${contractRefId} AND array_length("topics", 1) > 0
           GROUP BY 1 ORDER BY 2 DESC LIMIT 50`
-      : await prisma.$queryRaw<{ topic: string; count: bigint }[]>`
+        : await prisma.$queryRaw<{ topic: string; count: bigint }[]>`
           SELECT "topics"[1] AS topic, COUNT(*)::bigint AS count FROM "Event"
           WHERE array_length("topics", 1) > 0
           GROUP BY 1 ORDER BY 2 DESC LIMIT 50`;
-    return { items: rows.map((r) => ({ topic: r.topic, count: Number(r.count) })) };
-  });
+      return { items: rows.map((r) => ({ topic: r.topic, count: Number(r.count) })) };
+    },
+  );
 
-  app.get('/events/:id', async (req) => {
-    const { id } = z.object({ id: z.string() }).parse(req.params);
-    const e = await prisma.event.findUnique({
-      where: { id },
-      include: { contract: { select: { contractId: true, label: true } } },
-    });
-    if (!e) throw notFound('Event');
-    return serializeEvent(e);
-  });
+  app.get(
+    '/events/:id',
+    {
+      schema: doc({
+        tags,
+        summary: 'Get an event',
+        params: idParamsSchema,
+        response: { 200: eventSchema },
+      }),
+    },
+    async (req) => {
+      const { id } = idParamsSchema.parse(req.params);
+      const e = await prisma.event.findUnique({
+        where: { id },
+        include: { contract: { select: { contractId: true, label: true } } },
+      });
+      if (!e) throw notFound('Event');
+      return serializeEvent(e);
+    },
+  );
 }

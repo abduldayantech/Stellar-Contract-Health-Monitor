@@ -1,5 +1,4 @@
 import type { FastifyInstance } from 'fastify';
-import { z } from 'zod';
 import {
   openDestinationConfig,
   sealDestinationConfig,
@@ -15,6 +14,15 @@ import {
 import { notFound } from '../lib/errors';
 import { serializeDelivery, serializeDestination } from '../lib/serialize';
 import type { AppDeps } from '../app';
+import { doc } from '../openapi';
+import {
+  deliverySchema,
+  destinationListSchema,
+  destinationSchema,
+  items,
+} from '../openapi/responses';
+
+const tags = ['Destinations'];
 
 export async function destinationRoutes(app: FastifyInstance, { prisma, jobs, secrets }: AppDeps) {
   // Credentials (webhook secrets and headers, chat webhook URLs, bot tokens) are encrypted
@@ -28,22 +36,35 @@ export async function destinationRoutes(app: FastifyInstance, { prisma, jobs, se
   const view = (d: NotificationDestination, opts?: { revealSecret?: boolean }) =>
     serializeDestination(plain(d), opts);
 
-  app.get('/destinations', async () => {
-    const rows = await prisma.notificationDestination.findMany({ orderBy: { createdAt: 'desc' } });
-    const stats = await prisma.notificationDelivery.groupBy({
-      by: ['destinationId', 'status'],
-      _count: { _all: true },
-      where: { createdAt: { gte: new Date(Date.now() - 7 * 86400_000) } },
-    });
-    return {
-      items: rows.map((d) => ({
-        ...view(d),
-        last7Days: Object.fromEntries(
-          stats.filter((s) => s.destinationId === d.id).map((s) => [s.status, s._count._all]),
-        ),
-      })),
-    };
-  });
+  app.get(
+    '/destinations',
+    {
+      schema: doc({
+        tags,
+        summary: 'List notification destinations',
+        description: 'Includes delivery counts by status for the last 7 days.',
+        response: { 200: destinationListSchema },
+      }),
+    },
+    async () => {
+      const rows = await prisma.notificationDestination.findMany({
+        orderBy: { createdAt: 'desc' },
+      });
+      const stats = await prisma.notificationDelivery.groupBy({
+        by: ['destinationId', 'status'],
+        _count: { _all: true },
+        where: { createdAt: { gte: new Date(Date.now() - 7 * 86400_000) } },
+      });
+      return {
+        items: rows.map((d) => ({
+          ...view(d),
+          last7Days: Object.fromEntries(
+            stats.filter((s) => s.destinationId === d.id).map((s) => [s.status, s._count._all]),
+          ),
+        })),
+      };
+    },
+  );
 
   app.post('/destinations', async (req, reply) => {
     const body = createDestinationSchema.parse(req.body);
@@ -77,9 +98,19 @@ export async function destinationRoutes(app: FastifyInstance, { prisma, jobs, se
       if (existing.type === 'WEBHOOK') merged.secret = body.config.secret ?? current.secret;
       config = sealed(destinationConfigSchemas[existing.type].parse(merged));
     }
+    // Re-enabling starts the failure count from scratch and clears an automatic disable.
+    const reset =
+      body.enabled === true
+        ? {
+            consecutiveFailures: 0,
+            firstFailureAt: null,
+            disabledReason: null,
+            disabledAt: null,
+          }
+        : {};
     const d = await prisma.notificationDestination.update({
       where: { id },
-      data: { name: body.name, enabled: body.enabled, config },
+      data: { name: body.name, enabled: body.enabled, config, ...reset },
     });
     return view(d);
   });
@@ -100,33 +131,67 @@ export async function destinationRoutes(app: FastifyInstance, { prisma, jobs, se
     return view(d, { revealSecret: true });
   });
 
-  app.delete('/destinations/:id', async (req, reply) => {
-    const { id } = z.object({ id: z.string() }).parse(req.params);
-    await prisma.notificationDestination.delete({ where: { id } });
-    reply.status(204);
-  });
+  app.delete(
+    '/destinations/:id',
+    {
+      schema: doc({
+        tags,
+        summary: 'Delete a notification destination',
+        params: idParamsSchema,
+        response: { 204: null },
+      }),
+    },
+    async (req, reply) => {
+      const { id } = idParamsSchema.parse(req.params);
+      await prisma.notificationDestination.delete({ where: { id } });
+      reply.status(204);
+    },
+  );
 
-  app.post('/destinations/:id/test', async (req, reply) => {
-    const { id } = z.object({ id: z.string() }).parse(req.params);
-    const d = await prisma.notificationDestination.findUnique({ where: { id } });
-    if (!d) throw notFound('Destination');
-    const delivery = await prisma.notificationDelivery.create({
-      data: { destinationId: id, kind: 'test' },
-      include: { destination: { select: { id: true, name: true, type: true } } },
-    });
-    await jobs.enqueueDelivery(delivery.id);
-    reply.status(202);
-    return serializeDelivery(delivery);
-  });
+  app.post(
+    '/destinations/:id/test',
+    {
+      schema: doc({
+        tags,
+        summary: 'Send a test notification',
+        description: 'Queues a test delivery. No request body.',
+        params: idParamsSchema,
+        response: { 202: deliverySchema },
+      }),
+    },
+    async (req, reply) => {
+      const { id } = idParamsSchema.parse(req.params);
+      const d = await prisma.notificationDestination.findUnique({ where: { id } });
+      if (!d) throw notFound('Destination');
+      const delivery = await prisma.notificationDelivery.create({
+        data: { destinationId: id, kind: 'test' },
+        include: { destination: { select: { id: true, name: true, type: true } } },
+      });
+      await jobs.enqueueDelivery(delivery.id);
+      reply.status(202);
+      return serializeDelivery(delivery);
+    },
+  );
 
-  app.get('/destinations/:id/deliveries', async (req) => {
-    const { id } = z.object({ id: z.string() }).parse(req.params);
-    const rows = await prisma.notificationDelivery.findMany({
-      where: { destinationId: id },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
-      include: { destination: { select: { id: true, name: true, type: true } } },
-    });
-    return { items: rows.map(serializeDelivery) };
-  });
+  app.get(
+    '/destinations/:id/deliveries',
+    {
+      schema: doc({
+        tags,
+        summary: 'List the 50 most recent deliveries to a destination',
+        params: idParamsSchema,
+        response: { 200: items(deliverySchema) },
+      }),
+    },
+    async (req) => {
+      const { id } = idParamsSchema.parse(req.params);
+      const rows = await prisma.notificationDelivery.findMany({
+        where: { destinationId: id },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+        include: { destination: { select: { id: true, name: true, type: true } } },
+      });
+      return { items: rows.map(serializeDelivery) };
+    },
+  );
 }

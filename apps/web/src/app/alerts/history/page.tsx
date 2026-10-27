@@ -190,7 +190,7 @@ function HistoryPage() {
                           </DeliveryStatusBadge>
                         )}
                         <span
-                          className="text-xs text-slate-500"
+                          className="text-xs text-slate-500 dark:text-slate-400"
                           title={formatDateTime(a.triggeredAt)}
                         >
                           {timeAgo(a.triggeredAt)}
@@ -200,7 +200,7 @@ function HistoryPage() {
                         {a.title}
                       </p>
                       <p className="text-xs text-slate-500">
-                        {a.rule?.name ?? 'Deleted rule'}
+                        {a.rule?.name ?? (a.context?.system ? 'System' : 'Deleted rule')}
                         {a.contract && (
                           <>
                             {' · '}
@@ -280,12 +280,12 @@ function AlertDetails({ alert, onRetry }: { alert: AlertItem; onRetry: (d: Deliv
       <p className="whitespace-pre-line text-slate-700 dark:text-slate-300">{alert.message}</p>
       <dl className="grid gap-2 text-xs sm:grid-cols-3">
         <div>
-          <dt className="text-slate-500">Triggered</dt>
+          <dt className="text-slate-500 dark:text-slate-400">Triggered</dt>
           <dd>{formatDateTime(alert.triggeredAt)}</dd>
         </div>
         {alert.acknowledgedAt && (
           <div>
-            <dt className="text-slate-500">Acknowledged</dt>
+            <dt className="text-slate-500 dark:text-slate-400">Acknowledged</dt>
             <dd>
               {formatDateTime(alert.acknowledgedAt)}{' '}
               {alert.acknowledgedBy && `by ${alert.acknowledgedBy}`}
@@ -303,7 +303,7 @@ function AlertDetails({ alert, onRetry }: { alert: AlertItem; onRetry: (d: Deliv
         )}
         {alert.contract && (
           <div>
-            <dt className="text-slate-500">Contract</dt>
+            <dt className="text-slate-500 dark:text-slate-400">Contract</dt>
             <dd>
               <Link
                 className="text-indigo-600 hover:underline dark:text-indigo-400"
@@ -330,9 +330,11 @@ function AlertDetails({ alert, onRetry }: { alert: AlertItem; onRetry: (d: Deliv
         </ul>
       )}
       <div>
-        <p className="mb-1 text-xs font-medium text-slate-500">Notifications</p>
+        <p className="mb-1 text-xs font-medium text-slate-500 dark:text-slate-400">Notifications</p>
         {alert.deliveries.length === 0 ? (
-          <p className="text-xs text-slate-500">No destinations were configured for this rule.</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            No destinations were configured for this rule.
+          </p>
         ) : (
           <ul className="space-y-1">
             {alert.deliveries.map((d) => (
@@ -343,7 +345,7 @@ function AlertDetails({ alert, onRetry }: { alert: AlertItem; onRetry: (d: Deliv
               >
                 <DeliveryStatusBadge status={d.status} />
                 <span className="font-medium">{d.destination?.name ?? 'Deleted destination'}</span>
-                <span className="text-slate-500">
+                <span className="text-slate-500 dark:text-slate-400">
                   {d.kind === 'alert.resolved' ? 'resolution · ' : ''}
                   {d.attempts}/{d.maxAttempts} attempts
                   {d.responseStatus ? ` · HTTP ${d.responseStatus}` : ''}
@@ -367,7 +369,9 @@ function AlertDetails({ alert, onRetry }: { alert: AlertItem; onRetry: (d: Deliv
         )}
       </div>
       <details>
-        <summary className="cursor-pointer text-xs text-slate-500">Context</summary>
+        <summary className="cursor-pointer text-xs text-slate-500 dark:text-slate-400">
+          Context
+        </summary>
         <pre className="mt-1 max-h-72 overflow-auto rounded bg-white p-2 font-mono text-xs dark:bg-slate-950">
           {JSON.stringify(alert.context, null, 2)}
         </pre>

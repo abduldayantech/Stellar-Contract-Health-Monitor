@@ -103,7 +103,7 @@ const tones: Record<Tone, string> = {
   neutral:
     'bg-slate-100 text-slate-700 ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700',
   slate:
-    'bg-slate-100 text-slate-500 ring-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-700',
+    'bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-700',
   green:
     'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:ring-emerald-900',
   yellow:
@@ -147,8 +147,10 @@ const dotTones: Record<Tone, string> = {
 };
 
 export function StatusDot({ tone, pulse, label }: { tone: Tone; pulse?: boolean; label?: string }) {
+  // Without a label the dot is decorative (the text next to it carries the meaning).
+  const a11y = label ? { role: 'img', 'aria-label': label } : { 'aria-hidden': true };
   return (
-    <span className="relative inline-flex h-2.5 w-2.5" role="img" aria-label={label}>
+    <span className="relative inline-flex h-2.5 w-2.5" {...a11y}>
       {pulse && (
         <span
           className={cn(
