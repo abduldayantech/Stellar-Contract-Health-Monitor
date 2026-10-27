@@ -1,0 +1,59 @@
+# Public testnet demo: the production stack plus Caddy for HTTPS.
+# Used by deploy/demo/setup.sh; see deploy/demo/README.md.
+#
+#   docker compose -f docker-compose.yml -f deploy/demo/docker-compose.demo.yml up -d --build
+#   docker compose -f docker-compose.yml -f deploy/demo/docker-compose.demo.yml --profile seed run --rm seed
+
+services:
+  api:
+    environment:
+      # Only a week of history is needed for a demo, and new contracts backfill one day.
+      INITIAL_LOOKBACK_LEDGERS: 17280
+      RATE_LIMIT_PER_MINUTE: 300
+
+  worker:
+    environment:
+      EVENT_RETENTION_DAYS: 7
+      AUDIT_LOG_RETENTION_DAYS: 30
+      WEBHOOK_BLOCK_PRIVATE_IPS: 'true'
+      PUBLIC_DASHBOARD_URL: https://${DEMO_DOMAIN:?set DEMO_DOMAIN}
+
+  web:
+    environment:
+      SESSION_COOKIE_SECURE: 'true'
+    # Only Caddy is exposed to the internet.
+    ports: !reset []
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    environment:
+      DEMO_DOMAIN: ${DEMO_DOMAIN:?set DEMO_DOMAIN}
+    volumes:
+      - ./deploy/demo/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on:
+      - web
+
+  # One-off: registers testnet contracts and sample rules, and creates the public viewer token.
+  seed:
+    image: node:22-alpine
+    profiles: ['seed']
+    working_dir: /seed
+    command: ['node', 'seed-demo.mjs']
+    environment:
+      API_URL: http://api:4000
+      ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:?set ADMIN_API_TOKEN}
+    volumes:
+      - ./deploy/demo:/seed:ro
+    depends_on:
+      api: { condition: service_healthy }
+
+volumes:
+  caddydata:
+  caddyconfig:
