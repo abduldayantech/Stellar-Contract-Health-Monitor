@@ -10,6 +10,7 @@ import { errorHandler } from './lib/errors';
 import type { JobBus } from './lib/jobs';
 import type { ApiMetrics } from './lib/metrics';
 import type { StellarClientFactory } from './lib/stellar';
+import { registerOpenApi } from './openapi';
 import { alertRuleRoutes } from './routes/alert-rules';
 import { alertRoutes } from './routes/alerts';
 import { contractRoutes } from './routes/contracts';
@@ -90,6 +91,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   await app.register(authPlugin, { prisma: deps.prisma, adminToken: config.ADMIN_API_TOKEN });
+  await registerOpenApi(app);
 
   await statusRoutes(app, deps);
   await settingsRoutes(app, deps);

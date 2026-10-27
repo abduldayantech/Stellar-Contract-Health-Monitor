@@ -1,5 +1,4 @@
 import type { FastifyInstance } from 'fastify';
-import { z } from 'zod';
 import {
   openWebhookConfig,
   sealWebhookConfig,
@@ -10,12 +9,22 @@ import { generateWebhookSecret } from '@stellar-health/alert-engine';
 import {
   createDestinationSchema,
   emailConfigSchema,
+  idParamsSchema,
   updateDestinationSchema,
   webhookConfigSchema,
 } from '@stellar-health/shared-types';
 import { notFound } from '../lib/errors';
 import { serializeDelivery, serializeDestination } from '../lib/serialize';
 import type { AppDeps } from '../app';
+import { doc } from '../openapi';
+import {
+  deliverySchema,
+  destinationListSchema,
+  destinationSchema,
+  items,
+} from '../openapi/responses';
+
+const tags = ['Destinations'];
 
 export async function destinationRoutes(app: FastifyInstance, { prisma, jobs, secrets }: AppDeps) {
   // Webhook secrets and header values are encrypted at rest; decrypt only to build responses.
@@ -28,112 +37,198 @@ export async function destinationRoutes(app: FastifyInstance, { prisma, jobs, se
   const view = (d: NotificationDestination, opts?: { revealSecret?: boolean }) =>
     serializeDestination(plain(d), opts);
 
-  app.get('/destinations', async () => {
-    const rows = await prisma.notificationDestination.findMany({ orderBy: { createdAt: 'desc' } });
-    const stats = await prisma.notificationDelivery.groupBy({
-      by: ['destinationId', 'status'],
-      _count: { _all: true },
-      where: { createdAt: { gte: new Date(Date.now() - 7 * 86400_000) } },
-    });
-    return {
-      items: rows.map((d) => ({
-        ...view(d),
-        last7Days: Object.fromEntries(
-          stats.filter((s) => s.destinationId === d.id).map((s) => [s.status, s._count._all]),
-        ),
-      })),
-    };
-  });
+  app.get(
+    '/destinations',
+    {
+      schema: doc({
+        tags,
+        summary: 'List notification destinations',
+        description: 'Includes delivery counts by status for the last 7 days.',
+        response: { 200: destinationListSchema },
+      }),
+    },
+    async () => {
+      const rows = await prisma.notificationDestination.findMany({
+        orderBy: { createdAt: 'desc' },
+      });
+      const stats = await prisma.notificationDelivery.groupBy({
+        by: ['destinationId', 'status'],
+        _count: { _all: true },
+        where: { createdAt: { gte: new Date(Date.now() - 7 * 86400_000) } },
+      });
+      return {
+        items: rows.map((d) => ({
+          ...view(d),
+          last7Days: Object.fromEntries(
+            stats.filter((s) => s.destinationId === d.id).map((s) => [s.status, s._count._all]),
+          ),
+        })),
+      };
+    },
+  );
 
-  app.post('/destinations', async (req, reply) => {
-    const body = createDestinationSchema.parse(req.body);
-    const config =
-      body.type === 'WEBHOOK'
-        ? { ...body.config, secret: body.config.secret ?? generateWebhookSecret() }
-        : body.config;
-    const d = await prisma.notificationDestination.create({
-      data: {
-        name: body.name,
-        type: body.type,
-        enabled: body.enabled,
-        config: sealed(body.type, config),
-      },
-    });
-    reply.status(201);
-    // The secret is shown in full once, so the receiver can be configured.
-    return view(d, { revealSecret: true });
-  });
+  app.post(
+    '/destinations',
+    {
+      schema: doc({
+        tags,
+        summary: 'Create a notification destination',
+        description:
+          'For webhooks, a signing secret is generated when none is given. The response shows it in full; later responses mask it.',
+        body: createDestinationSchema,
+        response: { 201: destinationSchema },
+      }),
+    },
+    async (req, reply) => {
+      const body = createDestinationSchema.parse(req.body);
+      const config =
+        body.type === 'WEBHOOK'
+          ? { ...body.config, secret: body.config.secret ?? generateWebhookSecret() }
+          : body.config;
+      const d = await prisma.notificationDestination.create({
+        data: {
+          name: body.name,
+          type: body.type,
+          enabled: body.enabled,
+          config: sealed(body.type, config),
+        },
+      });
+      reply.status(201);
+      // The secret is shown in full once, so the receiver can be configured.
+      return view(d, { revealSecret: true });
+    },
+  );
 
-  app.patch('/destinations/:id', async (req) => {
-    const { id } = z.object({ id: z.string() }).parse(req.params);
-    const body = updateDestinationSchema.parse(req.body);
-    const existing = await prisma.notificationDestination.findUnique({ where: { id } });
-    if (!existing) throw notFound('Destination');
-    let config: Prisma.InputJsonValue | undefined;
-    if (body.config) {
-      const current = plain(existing).config as Record<string, unknown>;
-      config =
-        existing.type === 'WEBHOOK'
-          ? sealed(
-              'WEBHOOK',
-              webhookConfigSchema.parse({
-                ...current,
-                ...body.config,
-                secret: body.config.secret ?? current.secret,
-              }),
-            )
-          : (emailConfigSchema.parse(body.config) as Prisma.InputJsonValue);
-    }
-    const d = await prisma.notificationDestination.update({
-      where: { id },
-      data: { name: body.name, enabled: body.enabled, config },
-    });
-    return view(d);
-  });
+  app.patch(
+    '/destinations/:id',
+    {
+      schema: doc({
+        tags,
+        summary: 'Update a notification destination',
+        description:
+          "`config` is validated against the destination's type. Webhook fields not given are kept.",
+        params: idParamsSchema,
+        body: updateDestinationSchema,
+        response: { 200: destinationSchema },
+      }),
+    },
+    async (req) => {
+      const { id } = idParamsSchema.parse(req.params);
+      const body = updateDestinationSchema.parse(req.body);
+      const existing = await prisma.notificationDestination.findUnique({ where: { id } });
+      if (!existing) throw notFound('Destination');
+      let config: Prisma.InputJsonValue | undefined;
+      if (body.config) {
+        const current = plain(existing).config as Record<string, unknown>;
+        config =
+          existing.type === 'WEBHOOK'
+            ? sealed(
+                'WEBHOOK',
+                webhookConfigSchema.parse({
+                  ...current,
+                  ...body.config,
+                  secret: body.config.secret ?? current.secret,
+                }),
+              )
+            : (emailConfigSchema.parse(body.config) as Prisma.InputJsonValue);
+      }
+      const d = await prisma.notificationDestination.update({
+        where: { id },
+        data: { name: body.name, enabled: body.enabled, config },
+      });
+      return view(d);
+    },
+  );
 
-  app.post('/destinations/:id/rotate-secret', async (req) => {
-    const { id } = z.object({ id: z.string() }).parse(req.params);
-    const existing = await prisma.notificationDestination.findUnique({ where: { id } });
-    if (!existing || existing.type !== 'WEBHOOK') throw notFound('Webhook destination');
-    const d = await prisma.notificationDestination.update({
-      where: { id },
-      data: {
-        config: sealed('WEBHOOK', {
-          ...openWebhookConfig(secrets, existing.config),
-          secret: generateWebhookSecret(),
-        }),
-      },
-    });
-    return view(d, { revealSecret: true });
-  });
+  app.post(
+    '/destinations/:id/rotate-secret',
+    {
+      schema: doc({
+        tags,
+        summary: 'Generate a new webhook signing secret',
+        description: 'Webhooks only. The response shows the new secret in full. No request body.',
+        params: idParamsSchema,
+        response: { 200: destinationSchema },
+      }),
+    },
+    async (req) => {
+      const { id } = idParamsSchema.parse(req.params);
+      const existing = await prisma.notificationDestination.findUnique({ where: { id } });
+      if (!existing || existing.type !== 'WEBHOOK') throw notFound('Webhook destination');
+      const d = await prisma.notificationDestination.update({
+        where: { id },
+        data: {
+          config: sealed('WEBHOOK', {
+            ...openWebhookConfig(secrets, existing.config),
+            secret: generateWebhookSecret(),
+          }),
+        },
+      });
+      return view(d, { revealSecret: true });
+    },
+  );
 
-  app.delete('/destinations/:id', async (req, reply) => {
-    const { id } = z.object({ id: z.string() }).parse(req.params);
-    await prisma.notificationDestination.delete({ where: { id } });
-    reply.status(204);
-  });
+  app.delete(
+    '/destinations/:id',
+    {
+      schema: doc({
+        tags,
+        summary: 'Delete a notification destination',
+        params: idParamsSchema,
+        response: { 204: null },
+      }),
+    },
+    async (req, reply) => {
+      const { id } = idParamsSchema.parse(req.params);
+      await prisma.notificationDestination.delete({ where: { id } });
+      reply.status(204);
+    },
+  );
 
-  app.post('/destinations/:id/test', async (req, reply) => {
-    const { id } = z.object({ id: z.string() }).parse(req.params);
-    const d = await prisma.notificationDestination.findUnique({ where: { id } });
-    if (!d) throw notFound('Destination');
-    const delivery = await prisma.notificationDelivery.create({
-      data: { destinationId: id, kind: 'test' },
-      include: { destination: { select: { id: true, name: true, type: true } } },
-    });
-    await jobs.enqueueDelivery(delivery.id);
-    reply.status(202);
-    return serializeDelivery(delivery);
-  });
+  app.post(
+    '/destinations/:id/test',
+    {
+      schema: doc({
+        tags,
+        summary: 'Send a test notification',
+        description: 'Queues a test delivery. No request body.',
+        params: idParamsSchema,
+        response: { 202: deliverySchema },
+      }),
+    },
+    async (req, reply) => {
+      const { id } = idParamsSchema.parse(req.params);
+      const d = await prisma.notificationDestination.findUnique({ where: { id } });
+      if (!d) throw notFound('Destination');
+      const delivery = await prisma.notificationDelivery.create({
+        data: { destinationId: id, kind: 'test' },
+        include: { destination: { select: { id: true, name: true, type: true } } },
+      });
+      await jobs.enqueueDelivery(delivery.id);
+      reply.status(202);
+      return serializeDelivery(delivery);
+    },
+  );
 
-  app.get('/destinations/:id/deliveries', async (req) => {
-    const { id } = z.object({ id: z.string() }).parse(req.params);
-    const rows = await prisma.notificationDelivery.findMany({
-      where: { destinationId: id },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
-      include: { destination: { select: { id: true, name: true, type: true } } },
-    });
-    return { items: rows.map(serializeDelivery) };
-  });
+  app.get(
+    '/destinations/:id/deliveries',
+    {
+      schema: doc({
+        tags,
+        summary: 'List the 50 most recent deliveries to a destination',
+        params: idParamsSchema,
+        response: { 200: items(deliverySchema) },
+      }),
+    },
+    async (req) => {
+      const { id } = idParamsSchema.parse(req.params);
+      const rows = await prisma.notificationDelivery.findMany({
+        where: { destinationId: id },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+        include: { destination: { select: { id: true, name: true, type: true } } },
+      });
+      return { items: rows.map(serializeDelivery) };
+    },
+  );
 }

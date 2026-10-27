@@ -3,9 +3,13 @@
 Base URL: the API service (`http://localhost:4000` in development). All request and response
 bodies are JSON.
 
+An OpenAPI 3.1 document generated from the code is served at `GET /openapi.json`, with Swagger
+UI at `/docs`. Both are public. Use the document to generate clients; it lists every endpoint with
+its request and response schemas and the role it needs. This page gives an overview.
+
 ## Authentication
 
-Send a token with every request except `/health`, `/ready` and `/metrics`:
+Send a token with every request except `/health`, `/ready`, `/metrics`, `/openapi.json` and `/docs`:
 
 ```
 Authorization: Bearer <token>        # or: X-API-Key: <token>

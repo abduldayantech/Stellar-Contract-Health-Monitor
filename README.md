@@ -93,6 +93,8 @@ Integration and e2e tests need `pnpm services:up`; e2e also needs
 
 - [Architecture](docs/architecture.md) – components, data flow, event retention
 - [API reference](docs/api.md) – REST endpoints and authentication
+- Interactive API docs – Swagger UI at `/docs` on a running API ([localhost:4000/docs](http://localhost:4000/docs)
+  in development), generated from the code; the OpenAPI 3.1 document is at `/openapi.json`
 - [Webhooks](docs/webhooks.md) – payload format and signature verification
 - [Deployment](docs/deployment.md) – configuration and operations
 - [Monitoring](docs/monitoring.md) – Prometheus alerts and Grafana dashboard

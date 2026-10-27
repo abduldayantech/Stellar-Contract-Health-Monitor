@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { disconnectPrisma } from '@stellar-health/db';
 import { resetDatabase } from '../../../../tests/support/test-db';
 import { ADMIN_TOKEN, auth, contractId, createTestApp, type TestContext } from './helpers';
@@ -18,6 +18,11 @@ beforeEach(async () => {
   ctx.jobs.storage = [];
   ctx.jobs.deliveries = [];
   ctx.stellar.contracts.clear();
+});
+afterEach(() => {
+  // Responses must match the OpenAPI document (see checkResponsesAgainstSpec).
+  expect(ctx.responseSchemaErrors).toEqual([]);
+  ctx.responseSchemaErrors.length = 0;
 });
 
 async function register(seed = 1, label = 'Token') {
