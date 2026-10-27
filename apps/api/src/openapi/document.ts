@@ -8,6 +8,7 @@ import {
   createStorageEntrySchema,
   listAlertsQuerySchema,
   listAuditLogQuerySchema,
+  exportEventsQuerySchema,
   listEventsQuerySchema,
   networkSchema,
   notificationPreferencesSchema,
@@ -50,6 +51,8 @@ const contractsQuery = z.object({
   network: networkSchema.optional(),
   status: z.enum(['ACTIVE', 'PAUSED', 'ERROR']).optional(),
   search: z.string().max(120).optional().describe('Matches the label or contract ID'),
+  limit: z.coerce.number().int().min(1).max(500).default(100),
+  cursor: z.string().optional().describe('nextCursor from the previous page'),
 });
 const activityQuery = z.object({
   hours: z.coerce
@@ -196,6 +199,21 @@ export const ROUTES: RouteDoc[] = [
     summary: 'Search stored events, newest first',
     query: listEventsQuerySchema,
     responses: { 200: ok(r.page(r.event)) },
+  },
+  {
+    method: 'get',
+    path: '/events/export',
+    tag: 'Events',
+    summary: 'Download matching events as CSV or NDJSON',
+    description: 'Takes the same filters as GET /events and streams every match, newest first.',
+    query: exportEventsQuerySchema,
+    responses: {
+      200: {
+        description: 'The file, with a Content-Disposition filename',
+        schema: z.string(),
+        contentType: 'text/csv',
+      },
+    },
   },
   {
     method: 'get',

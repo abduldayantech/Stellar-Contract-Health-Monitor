@@ -51,32 +51,41 @@ export async function settingsRoutes(app: FastifyInstance, { prisma }: AppDeps) 
     const network = networkSchema.parse((req.params as { network: string }).network.toUpperCase());
     const body = upsertNetworkConfigSchema.parse(req.body);
     const passphrase = body.networkPassphrase ?? NETWORK_DEFAULTS[network].networkPassphrase;
-    let probe;
-    try {
-      probe = await probeRpc(body.rpcUrl);
-    } catch (err) {
-      throw new HttpError(
-        422,
-        'RPC_UNREACHABLE',
-        `Could not reach RPC at ${body.rpcUrl}: ${(err as Error).message}`,
-      );
+    const fallbackRpcUrls = [...new Set(body.fallbackRpcUrls ?? [])].filter(
+      (u) => u !== body.rpcUrl,
+    );
+    // Every provider must be reachable and serve the right network before it is saved.
+    let probe: Awaited<ReturnType<typeof probeRpc>> | undefined;
+    for (const url of [body.rpcUrl, ...fallbackRpcUrls]) {
+      let result;
+      try {
+        result = await probeRpc(url);
+      } catch (err) {
+        throw new HttpError(
+          422,
+          'RPC_UNREACHABLE',
+          `Could not reach RPC at ${url}: ${(err as Error).message}`,
+        );
+      }
+      if (result.passphrase !== passphrase) {
+        throw new HttpError(
+          422,
+          'NETWORK_MISMATCH',
+          `${url} serves "${result.passphrase}", but ${network} expects "${passphrase}".`,
+        );
+      }
+      probe ??= result;
     }
-    if (probe.passphrase !== passphrase) {
-      throw new HttpError(
-        422,
-        'NETWORK_MISMATCH',
-        `This RPC serves "${probe.passphrase}", but ${network} expects "${passphrase}".`,
-      );
-    }
+    const data = {
+      rpcUrl: body.rpcUrl,
+      fallbackRpcUrls,
+      networkPassphrase: passphrase,
+      enabled: body.enabled ?? true,
+    };
     const row = await prisma.networkConfig.upsert({
       where: { network },
-      create: {
-        network,
-        rpcUrl: body.rpcUrl,
-        networkPassphrase: passphrase,
-        enabled: body.enabled ?? true,
-      },
-      update: { rpcUrl: body.rpcUrl, networkPassphrase: passphrase, enabled: body.enabled ?? true },
+      create: { network, ...data },
+      update: data,
     });
     return { ...row, probe };
   });

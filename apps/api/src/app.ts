@@ -13,6 +13,8 @@ import { REQUEST_ID_HEADER, requestIdFor } from './lib/request-id';
 import type { JobBus } from './lib/jobs';
 import type { ApiMetrics } from './lib/metrics';
 import type { StellarClientFactory } from './lib/stellar';
+import { buildOpenApiDocument } from './openapi/document';
+import pkg from '../package.json' with { type: 'json' };
 import { alertRuleRoutes } from './routes/alert-rules';
 import { alertRoutes } from './routes/alerts';
 import { contractRoutes } from './routes/contracts';
