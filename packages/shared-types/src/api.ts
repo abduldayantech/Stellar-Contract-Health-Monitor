@@ -19,37 +19,6 @@ export const networkSchema = z.enum(NETWORKS);
  */
 export const contractIdShapeSchema = z.string().trim().min(1, 'Contract ID is required').max(100);
 
-/** Path parameters for routes addressed by a single resource ID. */
-export const idParamsSchema = z.object({ id: z.string().min(1) });
-
-export const storageEntryParamsSchema = z.object({ id: z.string(), entryId: z.string() });
-
-/** `:network` path parameter; accepted in any case (e.g. `testnet`). */
-export const networkParamsSchema = z.object({
-  network: z.preprocess((v) => (typeof v === 'string' ? v.toUpperCase() : v), networkSchema),
-});
-
-export const listContractsQuerySchema = z.object({
-  network: networkSchema.optional(),
-  status: z.enum(CONTRACT_STATUSES).optional(),
-  search: z.string().max(120).optional(),
-});
-
-export const contractActivityQuerySchema = z.object({
-  hours: z.coerce
-    .number()
-    .int()
-    .min(1)
-    .max(24 * 30)
-    .default(24),
-});
-
-export const listAlertRulesQuerySchema = z.object({ contractRefId: z.string().optional() });
-
-export const listEventTopicsQuerySchema = z.object({ contractRefId: z.string().optional() });
-
-export const testRpcSchema = z.object({ rpcUrl: z.string().url() });
-
 export const validateContractSchema = z.object({
   contractId: contractIdShapeSchema,
   network: networkSchema,

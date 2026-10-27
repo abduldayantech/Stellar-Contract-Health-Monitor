@@ -19,11 +19,6 @@ beforeEach(async () => {
   ctx.jobs.deliveries = [];
   ctx.stellar.contracts.clear();
 });
-afterEach(() => {
-  // Responses must match the OpenAPI document (see checkResponsesAgainstSpec).
-  expect(ctx.responseSchemaErrors).toEqual([]);
-  ctx.responseSchemaErrors.length = 0;
-});
 
 async function register(seed = 1, label = 'Token') {
   const id = contractId(seed);

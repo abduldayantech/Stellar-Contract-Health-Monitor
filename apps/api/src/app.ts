@@ -13,7 +13,6 @@ import { REQUEST_ID_HEADER, requestIdFor } from './lib/request-id';
 import type { JobBus } from './lib/jobs';
 import type { ApiMetrics } from './lib/metrics';
 import type { StellarClientFactory } from './lib/stellar';
-import { registerOpenApi } from './openapi';
 import { alertRuleRoutes } from './routes/alert-rules';
 import { alertRoutes } from './routes/alerts';
 import { contractRoutes } from './routes/contracts';
@@ -115,7 +114,6 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   await app.register(authPlugin, { prisma: deps.prisma, adminToken: config.ADMIN_API_TOKEN });
-  await registerOpenApi(app);
 
   // API reference: the OpenAPI document and Swagger UI need no token.
   const openApi = buildOpenApiDocument({ version: pkg.version });
