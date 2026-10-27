@@ -45,8 +45,8 @@ postgresql:
   image: postgres:17-alpine
   database: schm
   username: schm
-  # Generated on first install and kept on upgrades when empty.
-  password: ''
+  # Generated on first install and kept on upgrades when not set.
+  # password: <set to choose one>
   persistence:
     size: 10Gi
     storageClass: ''
