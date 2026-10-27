@@ -33,12 +33,26 @@ describe('alert rule schemas', () => {
         config: { windowSeconds: 10 },
       }).success,
     ).toBe(false);
+    const withValue = (valueCondition: unknown) =>
+      createAlertRuleSchema.safeParse({ ...base, type: 'EVENT_MATCH', config: { valueCondition } })
+        .success;
+    expect(
+      withValue({ path: 'amount', op: 'gt', value: '170141183460469231731687303715884105727' }),
+    ).toBe(true);
+    expect(withValue({ op: 'eq', value: '-5' })).toBe(true);
+    expect(withValue({ path: 'amount', op: 'gt', value: '1.5' })).toBe(false);
+    expect(withValue({ path: 'amount', op: 'between', value: '1' })).toBe(false);
+    expect(withValue({ path: 'a..b', op: 'gt', value: '1' })).toBe(false);
     const ok = createAlertRuleSchema.parse({ ...base, type: 'TTL_EXPIRY', config: {} });
     expect(ok).toMatchObject({
       enabled: true,
       severity: 'WARNING',
       cooldownSeconds: 300,
       destinationIds: [],
+    });
+    expect(createAlertRuleSchema.parse({ ...base, type: 'WASM_CHANGED' })).toMatchObject({
+      type: 'WASM_CHANGED',
+      config: {},
     });
   });
 });
@@ -59,6 +73,16 @@ describe('destination schemas', () => {
     expect(email(['a@example.com'])).toBe(true);
     expect(email([])).toBe(false);
     expect(email(['nope'])).toBe(false);
+  });
+
+  it('accepts Slack incoming webhook URLs on hooks.slack.com over https only', () => {
+    const slack = (webhookUrl: string) =>
+      createDestinationSchema.safeParse({ type: 'SLACK', name: 's', config: { webhookUrl } })
+        .success;
+    expect(slack('https://hooks.slack.com/services/T0/B0/abc')).toBe(true);
+    expect(slack('http://hooks.slack.com/services/T0/B0/abc')).toBe(false);
+    expect(slack('https://hooks.slack.com.evil.com/x')).toBe(false);
+    expect(slack('https://example.com/services/x')).toBe(false);
   });
 });
 

@@ -83,6 +83,8 @@ export async function ingestContract(
     let pages = 0;
     let fetched = 0;
     let resetOnce = false;
+    let reachedTip = false;
+    let lastPage: EventsPage | null = null;
 
     while (pages < config.INGEST_MAX_PAGES) {
       let page: EventsPage;
@@ -120,9 +122,14 @@ export async function ingestContract(
       latestLedger = page.latestLedger;
       oldestLedger = page.oldestLedger;
       cursor = page.cursor || cursor;
-      newEvents.push(...(await storeEvents(deps, contract, page.events)));
-      if (page.events.length < config.INGEST_PAGE_LIMIT) break;
+      lastPage = page;
+      newEvents.push(...(await storeEvents(deps, [contract], page.events)).get(contract.id)!);
+      if (page.events.length < config.INGEST_PAGE_LIMIT) {
+        reachedTip = true;
+        break;
+      }
     }
+    const covered = coveredLedger(reachedTip, latestLedger, lastPage);
 
     const lastEventAt = newEvents.reduce<Date | null>(
       (max, e) => (!max || e.ledgerClosedAt > max ? e.ledgerClosedAt : max),
@@ -136,7 +143,7 @@ export async function ingestContract(
       data: {
         cursor,
         startLedger,
-        lastIngestedLedger: latestLedger ?? contract.lastIngestedLedger,
+        lastIngestedLedger: covered ?? contract.lastIngestedLedger,
         lastPolledAt: now,
         lastEventAt,
         lastError: null,
@@ -224,13 +231,14 @@ export async function ingestBatch(
   }
 
   const timer = metrics.ingestDuration.labels(network).startTimer();
-  const byContractId = new Map(contracts.map((c) => [c.contractId, c]));
   const fresh = new Map<string, NormalizedEvent[]>(contracts.map((c) => [c.id, []]));
   let cursor = contracts.map((c) => c.cursor!).sort()[0]!;
   let latestLedger: number | null = null;
   let oldestLedger: number | null = null;
   let pages = 0;
   let fetched = 0;
+  let reachedTip = false;
+  let lastPage: EventsPage | null = null;
 
   try {
     const client = await deps.getClient(network);
@@ -254,17 +262,32 @@ export async function ingestBatch(
       latestLedger = page.latestLedger;
       oldestLedger = page.oldestLedger;
       cursor = page.cursor || cursor;
-      for (const c of contracts) {
-        const own = page.events.filter((e) => e.contractId && byContractId.get(e.contractId) === c);
-        fresh.get(c.id)!.push(...(await storeEvents(deps, c, own)));
+      lastPage = page;
+      for (const [id, events] of await storeEvents(deps, contracts, page.events))
+        fresh.get(id)!.push(...events);
+      if (page.events.length < config.INGEST_PAGE_LIMIT) {
+        reachedTip = true;
+        break;
       }
-      if (page.events.length < config.INGEST_PAGE_LIMIT) break;
     }
 
     const now = deps.now();
+    const covered = coveredLedger(reachedTip, latestLedger, lastPage);
+    // One update for the fields every member shares, then one per contract that saw new events.
+    await prisma.contract.updateMany({
+      where: { id: { in: contracts.map((c) => c.id) } },
+      data: {
+        cursor,
+        ...(covered !== null ? { lastIngestedLedger: covered } : {}),
+        lastPolledAt: now,
+        lastError: null,
+        consecutiveFailures: 0,
+      },
+    });
     let inserted = 0;
     for (const c of contracts) {
       const events = fresh.get(c.id)!;
+      if (events.length === 0) continue;
       inserted += events.length;
       const lastEventAt = events.reduce<Date | null>(
         (max, e) => (!max || e.ledgerClosedAt > max ? e.ledgerClosedAt : max),
@@ -272,15 +295,7 @@ export async function ingestBatch(
       );
       await prisma.contract.update({
         where: { id: c.id },
-        data: {
-          cursor,
-          lastIngestedLedger: latestLedger ?? c.lastIngestedLedger,
-          lastPolledAt: now,
-          lastEventAt,
-          lastError: null,
-          consecutiveFailures: 0,
-          eventCount: { increment: events.length },
-        },
+        data: { lastEventAt, eventCount: { increment: events.length } },
       });
     }
     if (latestLedger !== null) {
@@ -319,28 +334,31 @@ export async function ingestBatch(
   }
 }
 
-/** Inserts events, returning only those that were not already stored. */
+/**
+ * Stores one page of events for one or more contracts in a single insert and returns, per
+ * contract, only the events that were not already stored.
+ */
 async function storeEvents(
   deps: WorkerDeps,
-  contract: Contract,
+  contracts: Contract[],
   events: NormalizedEvent[],
-): Promise<NormalizedEvent[]> {
-  const relevant = events.filter(
-    (e) => e.contractId === null || e.contractId === contract.contractId,
-  );
-  if (relevant.length === 0) return [];
-  const existing = await deps.prisma.event.findMany({
-    where: { contractRefId: contract.id, eventId: { in: relevant.map((e) => e.id) } },
-    select: { eventId: true },
-  });
-  const seen = new Set(existing.map((e) => e.eventId));
-  const fresh = relevant.filter((e) => !seen.has(e.id));
-  if (fresh.length === 0) return [];
-  await deps.prisma.event.createMany({
-    data: fresh.map((e) => ({
-      contractRefId: contract.id,
+): Promise<Map<string, NormalizedEvent[]>> {
+  const byContractId = new Map(contracts.map((c) => [c.contractId, c]));
+  const rows: Prisma.EventCreateManyInput[] = [];
+  const pending = new Map<string, NormalizedEvent>();
+  for (const e of events) {
+    // Events without a contract ID only make sense when polling a single contract.
+    const c = e.contractId
+      ? byContractId.get(e.contractId)
+      : contracts.length === 1
+        ? contracts[0]
+        : undefined;
+    if (!c) continue;
+    pending.set(`${c.id}:${e.id}`, e);
+    rows.push({
+      contractRefId: c.id,
       eventId: e.id,
-      network: contract.network,
+      network: c.network,
       type: e.type,
       ledger: e.ledger,
       ledgerClosedAt: e.ledgerClosedAt,
@@ -350,10 +368,36 @@ async function storeEvents(
       value: (e.value ?? null) as Prisma.InputJsonValue,
       valueXdr: e.valueXdr,
       inSuccessfulContractCall: e.inSuccessfulContractCall,
-    })),
+    });
+  }
+  const fresh = new Map<string, NormalizedEvent[]>(contracts.map((c) => [c.id, []]));
+  if (rows.length === 0) return fresh;
+  // skipDuplicates makes re-reads (overlapping cursors, retried jobs) free; only new rows return.
+  const inserted = await deps.prisma.event.createManyAndReturn({
+    data: rows,
     skipDuplicates: true,
+    select: { contractRefId: true, eventId: true },
   });
+  for (const row of inserted) {
+    const e = pending.get(`${row.contractRefId}:${row.eventId}`);
+    if (e) fresh.get(row.contractRefId)!.push(e);
+  }
+  for (const list of fresh.values()) list.sort((a, b) => (a.id < b.id ? -1 : 1));
   return fresh;
+}
+
+/**
+ * The ledger ingestion has fully covered. Only a short final page means the RPC tip was
+ * reached; when the page budget ran out first, the last stored event marks how far we got.
+ */
+function coveredLedger(
+  reachedTip: boolean,
+  latestLedger: number | null,
+  lastPage: EventsPage | null,
+) {
+  if (reachedTip || !lastPage || lastPage.events.length === 0) return latestLedger;
+  // Events in the last ledger may continue on the next page, so only the one before is complete.
+  return lastPage.events.at(-1)!.ledger - 1;
 }
 
 function toEventLike(e: NormalizedEvent): EventLike {
@@ -364,6 +408,7 @@ function toEventLike(e: NormalizedEvent): EventLike {
     ledgerClosedAt: e.ledgerClosedAt,
     txHash: e.txHash,
     inSuccessfulContractCall: e.inSuccessfulContractCall,
+    value: e.value,
   };
 }
 
@@ -399,6 +444,7 @@ export async function evaluateEventRules(
             ledgerClosedAt: true,
             txHash: true,
             inSuccessfulContractCall: true,
+            value: true,
           },
           orderBy: { ledger: 'desc' },
           take: 10_000,

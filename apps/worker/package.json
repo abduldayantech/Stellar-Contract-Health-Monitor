@@ -9,7 +9,9 @@
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --dir test/unit",
-    "test:integration": "vitest run --dir test/integration --no-file-parallelism"
+    "test:integration": "vitest run --dir test/integration --no-file-parallelism",
+    "bench:ingest": "tsx bench/ingest.ts",
+    "soak:testnet": "tsx bench/soak-testnet.ts"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",

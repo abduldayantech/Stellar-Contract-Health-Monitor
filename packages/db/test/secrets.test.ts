@@ -2,7 +2,9 @@ import { randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
   createSecretBox,
+  openDestinationConfig,
   openWebhookConfig,
+  sealDestinationConfig,
   parseEncryptionKey,
   sealWebhookConfig,
 } from '../src/secrets';
@@ -58,5 +60,15 @@ describe('SecretBox', () => {
       secret: 's',
       headers: { Authorization: 'Bearer t' },
     });
+  });
+
+  it('seals chat webhook URLs and bot tokens', () => {
+    const box = createSecretBox(key);
+    const config = { webhookUrl: 'https://hooks.slack.com/services/T/B/x', botToken: '1:abc' };
+    const sealed = sealDestinationConfig(box, config);
+    expect(JSON.stringify(sealed)).not.toContain('hooks.slack.com');
+    expect(JSON.stringify(sealed)).not.toContain('1:abc');
+    expect(openDestinationConfig(box, sealed)).toEqual(config);
+    expect(sealDestinationConfig(box, { to: ['a@b.co'] })).toEqual({ to: ['a@b.co'] });
   });
 });

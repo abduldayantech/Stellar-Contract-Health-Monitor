@@ -15,7 +15,7 @@ import {
   Spinner,
 } from '@stellar-health/ui';
 import { api, errorMessage } from '@/lib/api';
-import type { Destination } from '@/lib/types';
+import type { Destination, DestinationType } from '@/lib/types';
 import { CopyButton } from './copy-button';
 
 export function DestinationsCard({
@@ -28,7 +28,7 @@ export function DestinationsCard({
   onChange: () => void;
 }) {
   const [adding, setAdding] = useState(false);
-  const [type, setType] = useState<'WEBHOOK' | 'EMAIL'>('WEBHOOK');
+  const [type, setType] = useState<DestinationType>('WEBHOOK');
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
   const [emails, setEmails] = useState('');
@@ -42,19 +42,18 @@ export function DestinationsCard({
     setSaving(true);
     setError(null);
     try {
-      const body =
+      const config =
         type === 'WEBHOOK'
-          ? { type, name, config: { url } }
-          : {
-              type,
-              name,
-              config: {
+          ? { url }
+          : type === 'SLACK'
+            ? { webhookUrl: url }
+            : {
                 to: emails
                   .split(',')
                   .map((s) => s.trim())
                   .filter(Boolean),
-              },
-            };
+              };
+      const body = { type, name, config };
       const d = await api<Destination>('/destinations', { method: 'POST', body });
       if (d.config.secret) setRevealed({ id: d.id, secret: d.config.secret });
       setName('');
@@ -85,7 +84,7 @@ export function DestinationsCard({
     <Card>
       <CardHeader
         title="Notification destinations"
-        description="Webhooks receive a signed JSON POST for every alert. Email requires SMTP to be configured on the server."
+        description="Webhooks receive a signed JSON POST for every alert. Slack posts a formatted message to a channel. Email requires SMTP to be configured on the server."
         actions={
           <Button size="sm" variant="secondary" onClick={() => setAdding((a) => !a)}>
             {adding ? 'Cancel' : 'Add destination'}
@@ -102,10 +101,11 @@ export function DestinationsCard({
             <Select
               id="d-type"
               value={type}
-              onChange={(e) => setType(e.target.value as 'WEBHOOK' | 'EMAIL')}
+              onChange={(e) => setType(e.target.value as DestinationType)}
             >
               <option value="WEBHOOK">Webhook</option>
               <option value="EMAIL">Email</option>
+              <option value="SLACK">Slack</option>
             </Select>
           </Field>
           <Field label="Name" htmlFor="d-name">
@@ -114,10 +114,21 @@ export function DestinationsCard({
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
-              placeholder="Ops Slack relay"
+              placeholder="Ops alerts"
             />
           </Field>
-          {type === 'WEBHOOK' ? (
+          {type === 'SLACK' ? (
+            <Field label="Slack webhook URL" htmlFor="d-url">
+              <Input
+                id="d-url"
+                type="url"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                required
+                placeholder="https://hooks.slack.com/services/…"
+              />
+            </Field>
+          ) : type === 'WEBHOOK' ? (
             <Field label="URL" htmlFor="d-url">
               <Input
                 id="d-url"
@@ -168,7 +179,7 @@ export function DestinationsCard({
       ) : !destinations?.length ? (
         <EmptyState
           title="No destinations"
-          description="Add a webhook URL to receive alerts in Slack, Discord, PagerDuty or your own service."
+          description="Add a Slack channel, an email address or a webhook URL to receive alerts."
         />
       ) : (
         <ul className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -183,8 +194,12 @@ export function DestinationsCard({
                   {d.name} <Badge>{d.type.toLowerCase()}</Badge>{' '}
                   {!d.enabled && <Badge tone="slate">disabled</Badge>}
                 </p>
-                <p className="truncate text-xs text-slate-500 dark:text-slate-400">
-                  {d.type === 'WEBHOOK' ? d.config.url : d.config.to?.join(', ')}
+                <p className="truncate text-xs text-slate-500">
+                  {d.type === 'WEBHOOK'
+                    ? d.config.url
+                    : d.type === 'EMAIL'
+                      ? d.config.to?.join(', ')
+                      : d.config.webhookUrl}
                   {d.config.secret && <> · secret {d.config.secret}</>}
                 </p>
                 {d.last7Days && Object.keys(d.last7Days).length > 0 && (

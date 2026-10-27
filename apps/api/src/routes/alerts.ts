@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { Prisma } from '@stellar-health/db';
-import { listAlertsQuerySchema } from '@stellar-health/shared-types';
+import { alertActionSchema, listAlertsQuerySchema } from '@stellar-health/shared-types';
 import { HttpError, notFound } from '../lib/errors';
 import { toPage } from '../lib/pagination';
 import { serializeAlert, serializeDelivery } from '../lib/serialize';
@@ -55,6 +55,7 @@ export async function alertRoutes(app: FastifyInstance, { prisma, jobs }: AppDep
 
   app.post('/alerts/:id/acknowledge', async (req) => {
     const { id } = z.object({ id: z.string() }).parse(req.params);
+    const { note } = alertActionSchema.parse(req.body);
     const a = await prisma.alert.findUnique({ where: { id } });
     if (!a) throw notFound('Alert');
     if (a.status !== 'TRIGGERED')
@@ -65,6 +66,7 @@ export async function alertRoutes(app: FastifyInstance, { prisma, jobs }: AppDep
         status: 'ACKNOWLEDGED',
         acknowledgedAt: new Date(),
         acknowledgedBy: req.principal?.name ?? null,
+        acknowledgeNote: note,
       },
       include,
     });
@@ -73,6 +75,7 @@ export async function alertRoutes(app: FastifyInstance, { prisma, jobs }: AppDep
 
   app.post('/alerts/:id/resolve', async (req) => {
     const { id } = z.object({ id: z.string() }).parse(req.params);
+    const { note } = alertActionSchema.parse(req.body);
     const a = await prisma.alert.findUnique({ where: { id } });
     if (!a) throw notFound('Alert');
     if (a.status === 'RESOLVED')
@@ -85,7 +88,12 @@ export async function alertRoutes(app: FastifyInstance, { prisma, jobs }: AppDep
       });
       return tx.alert.update({
         where: { id },
-        data: { status: 'RESOLVED', resolvedAt: new Date() },
+        data: {
+          status: 'RESOLVED',
+          resolvedAt: new Date(),
+          resolvedBy: req.principal?.name ?? null,
+          resolveNote: note,
+        },
         include,
       });
     });

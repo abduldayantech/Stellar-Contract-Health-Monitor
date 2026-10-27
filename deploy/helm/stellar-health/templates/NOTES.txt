@@ -1,0 +1,25 @@
+Stellar Contract Health Monitor is deploying.
+
+Migrations run in an init container of every API and worker pod; pods start once the schema is
+current. Watch progress with:
+
+  kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }} -w
+
+{{- if .Values.ingress.enabled }}
+
+Open the dashboard at http{{ if .Values.ingress.tls }}s{{ end }}://{{ .Values.ingress.host }}
+{{- else }}
+
+Open the dashboard:
+
+  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "sh.fullname" . }}-web {{ .Values.web.port }}:{{ .Values.web.port }}
+  open http://localhost:{{ .Values.web.port }}
+{{- end }}
+
+Sign in with the admin token from {{ if .Values.existingSecret }}your Secret "{{ .Values.existingSecret }}"{{ else }}secrets.adminApiToken{{ end }},
+then create named tokens under Settings → API tokens.
+{{- if .Values.postgresql.enabled }}
+
+The bundled Postgres is a single pod meant for evaluation. For production, set
+postgresql.enabled=false and externalDatabase.url to a managed database.
+{{- end }}

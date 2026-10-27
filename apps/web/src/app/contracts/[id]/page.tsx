@@ -33,9 +33,10 @@ import { ActivityChart } from '@/components/activity-chart';
 import { ContractLabel } from '@/components/contract-label';
 import { CopyButton } from '@/components/copy-button';
 import { EventTable } from '@/components/event-table';
+import { ExtendCommand, needsExtending } from '@/components/extend-command';
 import { api, errorMessage, useApi } from '@/lib/api';
 import { describeRule } from '@/lib/rules';
-import type { ContractDetail, EventItem, Page } from '@/lib/types';
+import type { ContractDetail, EventItem, Page, StorageEntry } from '@/lib/types';
 
 export default function ContractDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -483,47 +484,84 @@ function StorageSection({
         </thead>
         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
           {contract.storageEntries.map((s) => (
-            <tr key={s.id} data-testid="storage-row">
-              <Td className="font-medium">{s.label}</Td>
-              <Td>
-                <Badge>{s.kind.toLowerCase()}</Badge>
-              </Td>
-              <Td className="tabular-nums">
-                {s.exists ? (
-                  (s.liveUntilLedger?.toLocaleString() ?? '—')
-                ) : (
-                  <Badge tone="red">missing / archived</Badge>
-                )}
-              </Td>
-              <Td className="whitespace-nowrap">
-                {s.exists ? formatLedgers(s.ledgersRemaining) : '—'}
-              </Td>
-              <Td>
-                <TtlBar ledgersRemaining={s.exists ? s.ledgersRemaining : 0} />
-              </Td>
-              <Td className="whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">
-                {timeAgo(s.lastCheckedAt)}
-              </Td>
-              <Td>
-                {(s.kind === 'PERSISTENT' || s.kind === 'TEMPORARY') && (
-                  <button
-                    type="button"
-                    className="text-xs text-rose-600 hover:underline"
-                    onClick={async () => {
-                      await api(`/contracts/${contract.id}/storage-entries/${s.id}`, {
-                        method: 'DELETE',
-                      });
-                      onChange();
-                    }}
-                  >
-                    Remove
-                  </button>
-                )}
-              </Td>
-            </tr>
+            <StorageRow key={s.id} contract={contract} entry={s} onChange={onChange} />
           ))}
         </tbody>
       </Table>
     </Card>
+  );
+}
+
+function StorageRow({
+  contract,
+  entry,
+  onChange,
+}: {
+  contract: ContractDetail;
+  entry: StorageEntry;
+  onChange: () => void;
+}) {
+  const soon = needsExtending(entry);
+  const [open, setOpen] = useState(soon);
+  return (
+    <>
+      <tr data-testid="storage-row">
+        <Td className="font-medium">{entry.label}</Td>
+        <Td>
+          <Badge>{entry.kind.toLowerCase()}</Badge>
+        </Td>
+        <Td className="tabular-nums">
+          {entry.exists ? (
+            (entry.liveUntilLedger?.toLocaleString() ?? '—')
+          ) : (
+            <Badge tone="red">missing / archived</Badge>
+          )}
+        </Td>
+        <Td className="whitespace-nowrap">
+          {entry.exists ? formatLedgers(entry.ledgersRemaining) : '—'}
+        </Td>
+        <Td>
+          <TtlBar ledgersRemaining={entry.exists ? entry.ledgersRemaining : 0} />
+        </Td>
+        <Td className="whitespace-nowrap text-xs text-slate-500">{timeAgo(entry.lastCheckedAt)}</Td>
+        <Td className="whitespace-nowrap">
+          {entry.exists && entry.extend && (
+            <button
+              type="button"
+              className={
+                soon
+                  ? 'mr-3 text-xs font-medium text-amber-700 hover:underline dark:text-amber-400'
+                  : 'mr-3 text-xs text-slate-500 hover:underline'
+              }
+              aria-expanded={open}
+              onClick={() => setOpen((o) => !o)}
+            >
+              Extend TTL
+            </button>
+          )}
+          {(entry.kind === 'PERSISTENT' || entry.kind === 'TEMPORARY') && (
+            <button
+              type="button"
+              className="text-xs text-rose-600 hover:underline"
+              onClick={async () => {
+                await api(`/contracts/${contract.id}/storage-entries/${entry.id}`, {
+                  method: 'DELETE',
+                });
+                onChange();
+              }}
+            >
+              Remove
+            </button>
+          )}
+        </Td>
+      </tr>
+      {open && entry.exists && entry.extend && (
+        <tr>
+          <Td colSpan={7} className="bg-slate-50/60 dark:bg-slate-900/40">
+            <ExtendCommand contract={contract} entry={entry} />
+          </Td>
+        </tr>
+      )}
+    </>
   );
 }

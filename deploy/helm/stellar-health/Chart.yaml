@@ -1,0 +1,10 @@
+apiVersion: v2
+name: stellar-health
+description: Stellar Contract Health Monitor — API, worker and dashboard, with optional bundled Postgres and Redis
+type: application
+version: 0.1.0
+appVersion: '0.1.0'
+keywords: [stellar, soroban, monitoring]
+home: https://github.com/abduldayantech/Stellar-Contract-Health-Monitor
+sources:
+  - https://github.com/abduldayantech/Stellar-Contract-Health-Monitor

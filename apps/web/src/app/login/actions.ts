@@ -25,7 +25,15 @@ export async function login(_prev: LoginState, form: FormData): Promise<LoginSta
   } catch {
     return { error: 'Could not reach the monitoring API. Is it running?' };
   }
-  if (res.status === 401) return { error: 'That token is invalid or has been revoked' };
+  if (res.status === 401) {
+    const body = (await res.json().catch(() => null)) as { error?: { code?: string } } | null;
+    return {
+      error:
+        body?.error?.code === 'TOKEN_EXPIRED'
+          ? 'That token has expired. Ask an admin for a new one.'
+          : 'That token is invalid or has been revoked',
+    };
+  }
   if (!res.ok) return { error: `Unexpected response from API (${res.status})` };
 
   (await cookies()).set(SESSION_COOKIE, token, {

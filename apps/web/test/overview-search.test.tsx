@@ -2,6 +2,7 @@ import type * as ApiModule from '@/lib/api';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createElement, useSyncExternalStore, type ReactNode } from 'react';
+import { SWRConfig } from 'swr';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Contract } from '@/lib/types';
 
@@ -79,19 +80,20 @@ const contracts = [
   },
 ] as Contract[];
 
+function contractsPage(path: string) {
+  const search = new URL(path, 'http://localhost').searchParams.get('search') ?? '';
+  return { items: contracts.filter((contract) => matches(contract, search)), nextCursor: null };
+}
+
 vi.mock('@/lib/api', async (orig) => ({
   ...(await orig<typeof ApiModule>()),
+  // The contract grid pages with useSWRInfinite, which fetches through api().
+  api: async (path: string) => contractsPage(path),
   useApi: (path: string | null) => {
     if (!path || path.startsWith('/events') || path.startsWith('/alerts')) {
       return { data: { items: [] }, isLoading: false };
     }
-    if (path.startsWith('/contracts')) {
-      const search = new URL(path, 'http://localhost').searchParams.get('search') ?? '';
-      return {
-        data: { items: contracts.filter((contract) => matches(contract, search)) },
-        isLoading: false,
-      };
-    }
+    if (path.startsWith('/contracts')) return { data: contractsPage(path), isLoading: false };
     return { data: undefined, isLoading: false };
   },
 }));
@@ -105,9 +107,13 @@ beforeEach(() => {
 describe('Overview contract search', () => {
   it('filters by label without changing the monitored total, and keeps the query in the URL', async () => {
     const user = userEvent.setup();
-    render(<OverviewPage />);
+    render(
+      <SWRConfig value={{ provider: () => new Map() }}>
+        <OverviewPage />
+      </SWRConfig>,
+    );
 
-    expect(screen.getByText('Alpha token')).toBeInTheDocument();
+    expect(await screen.findByText('Alpha token')).toBeInTheDocument();
     expect(screen.getByText('Beta pool')).toBeInTheDocument();
     expect(screen.getByText('Monitored contracts').parentElement).toHaveTextContent('2');
 
@@ -116,8 +122,8 @@ describe('Overview contract search', () => {
     expect(screen.getByText('Beta pool')).toBeInTheDocument();
 
     await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/?q=ALPHA', { scroll: false }));
+    await waitFor(() => expect(screen.queryByText('Beta pool')).not.toBeInTheDocument());
     expect(screen.getByText('Alpha token')).toBeInTheDocument();
-    expect(screen.queryByText('Beta pool')).not.toBeInTheDocument();
     expect(screen.getByText('Monitored contracts').parentElement).toHaveTextContent('2');
 
     await user.clear(screen.getByLabelText('Search contracts'));
@@ -125,12 +131,16 @@ describe('Overview contract search', () => {
     expect(nav.replace).toHaveBeenCalledWith('/', { scroll: false });
   });
 
-  it('reads ?q= and filters by contract ID prefix', () => {
+  it('reads ?q= and filters by contract ID prefix', async () => {
     nav.setSearch('q=czzz');
-    render(<OverviewPage />);
+    render(
+      <SWRConfig value={{ provider: () => new Map() }}>
+        <OverviewPage />
+      </SWRConfig>,
+    );
 
     expect(screen.getByLabelText('Search contracts')).toHaveValue('czzz');
-    expect(screen.getByText('Beta pool')).toBeInTheDocument();
+    expect(await screen.findByText('Beta pool')).toBeInTheDocument();
     expect(screen.queryByText('Alpha token')).not.toBeInTheDocument();
     expect(screen.getByText('Monitored contracts').parentElement).toHaveTextContent('2');
   });

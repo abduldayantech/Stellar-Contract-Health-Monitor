@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
+import useSWRInfinite from 'swr/infinite';
 import {
   AlertStatusBadge,
   Button,
@@ -20,10 +21,11 @@ import {
 } from '@stellar-health/ui';
 import { PageHeader } from '@/components/app-shell';
 import { EventTable } from '@/components/event-table';
-import { qs, useApi } from '@/lib/api';
+import { api, qs, useApi } from '@/lib/api';
 import type { AlertItem, Contract, EventItem, Page, Status } from '@/lib/types';
 
 const SEARCH_DEBOUNCE_MS = 300;
+const CONTRACTS_PAGE_SIZE = 50;
 
 function Overview() {
   const router = useRouter();
@@ -56,17 +58,31 @@ function Overview() {
     return () => window.clearTimeout(id);
   }, [draft, paramsKey, pathname, router]);
 
-  const catalog = useApi<Page<Contract>>('/contracts', { refreshInterval: 15_000 });
-  const contracts = useApi<Page<Contract>>(`/contracts${qs({ search: query || undefined })}`, {
-    refreshInterval: 15_000,
-  });
+  // Health summary across the first 500 contracts; the grid below pages through all of them.
+  const catalog = useApi<Page<Contract>>('/contracts?limit=500', { refreshInterval: 15_000 });
+  const contracts = useSWRInfinite<Page<Contract>>(
+    (index, prev) => {
+      if (prev && !prev.nextCursor) return null;
+      return `/contracts${qs({
+        search: query || undefined,
+        limit: CONTRACTS_PAGE_SIZE,
+        cursor: index === 0 ? undefined : (prev?.nextCursor ?? undefined),
+      })}`;
+    },
+    (path: string) => api<Page<Contract>>(path),
+    { refreshInterval: 15_000, revalidateFirstPage: true },
+  );
   const events = useApi<Page<EventItem>>('/events?limit=10', { refreshInterval: 10_000 });
   const alerts = useApi<Page<AlertItem>>('/alerts?limit=6', { refreshInterval: 15_000 });
   const status = useApi<Status>('/status', { refreshInterval: 15_000 });
 
   const allItems = catalog.data?.items ?? [];
-  const items = contracts.data?.items ?? [];
+  const items = contracts.data?.flatMap((p) => p.items) ?? [];
+  const hasMore = Boolean(contracts.data?.[contracts.data.length - 1]?.nextCursor);
   const totals = status.data?.totals;
+  const monitored = totals
+    ? Object.values(totals.contracts).reduce((sum, n) => sum + n, 0)
+    : allItems.length;
   const unhealthy = allItems.filter(
     (c) => c.health === 'critical' || c.health === 'warning',
   ).length;
@@ -86,7 +102,7 @@ function Overview() {
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="Summary">
         <Stat
           label="Monitored contracts"
-          value={allItems.length}
+          value={monitored}
           hint={unhealthy ? `${unhealthy} need attention` : 'All healthy'}
           tone={unhealthy ? 'yellow' : undefined}
         />
@@ -146,16 +162,30 @@ function Overview() {
                     />
                   </Card>
                 ) : (
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {items.map((c) => (
-                      <ContractSummaryCard
-                        key={c.id}
-                        contract={c}
-                        href={`/contracts/${c.id}`}
-                        LinkComponent={Link}
-                      />
-                    ))}
-                  </div>
+                  <>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {items.map((c) => (
+                        <ContractSummaryCard
+                          key={c.id}
+                          contract={c}
+                          href={`/contracts/${c.id}`}
+                          LinkComponent={Link}
+                        />
+                      ))}
+                    </div>
+                    {hasMore && (
+                      <div className="mt-3 flex justify-center">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          loading={contracts.isValidating}
+                          onClick={() => contracts.setSize(contracts.size + 1)}
+                        >
+                          Load more contracts
+                        </Button>
+                      </div>
+                    )}
+                  </>
                 )}
               </>
             )}

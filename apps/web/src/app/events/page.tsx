@@ -5,6 +5,7 @@ import { Suspense, useEffect, useState, type FormEvent } from 'react';
 import useSWRInfinite from 'swr/infinite';
 import { Alert, Button, Card, EmptyState, Field, Input, Select, Spinner } from '@stellar-health/ui';
 import { PageHeader } from '@/components/app-shell';
+import { ExportLinks } from '@/components/export-links';
 import { EventTable } from '@/components/event-table';
 import { api, errorMessage, qs, useApi } from '@/lib/api';
 import type { Contract, EventItem, Page } from '@/lib/types';
@@ -29,7 +30,7 @@ function EventsExplorer() {
     setDraft(Object.fromEntries(FILTER_KEYS.map((k) => [k, params.get(k) ?? ''])) as Filters);
   }, [paramsKey]);
 
-  const contracts = useApi<Page<Contract>>('/contracts');
+  const contracts = useApi<Page<Contract>>('/contracts?limit=500');
   const topics = useApi<{ items: { topic: string; count: number }[] }>(
     `/events/topics${qs({ contractRefId: applied.contractRefId })}`,
   );
@@ -78,6 +79,7 @@ function EventsExplorer() {
       <PageHeader
         title="Events"
         description="Contract events stored by the monitor. Click a row for details, or a topic to filter by it."
+        actions={<ExportLinks query={query} />}
       />
       <Card className="p-4">
         <form

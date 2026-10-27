@@ -80,22 +80,31 @@ export function describeTtl(params: {
   breaches: TtlBreach[];
   latestLedger: number;
   ledgersThreshold: number;
+  /** `stellar contract extend` command per entry ID, shown for entries that are still live. */
+  extendCommands?: Record<string, string>;
 }): AlertDescription {
   const { contract, breaches } = params;
+  const commands = params.extendCommands ?? {};
   const worst = breaches[0];
   const expiredCount = breaches.filter((b) => b.expired).length;
   const title =
     expiredCount > 0
       ? `${expiredCount} storage entr${expiredCount === 1 ? 'y has' : 'ies have'} expired on ${contractName(contract)}`
       : `Storage expiring in ~${formatDuration(worst?.secondsRemaining ?? 0)} on ${contractName(contract)}`;
-  const lines = breaches.map((b) =>
-    b.expired
-      ? `• ${b.entry.label}: expired or archived`
-      : `• ${b.entry.label}: ${b.ledgersRemaining} ledgers (~${formatDuration(b.ledgersRemaining * AVG_LEDGER_SECONDS)}) left`,
-  );
+  const lines = breaches.map((b) => {
+    if (b.expired) return `• ${b.entry.label}: expired or archived`;
+    const line = `• ${b.entry.label}: ${b.ledgersRemaining} ledgers (~${formatDuration(b.ledgersRemaining * AVG_LEDGER_SECONDS)}) left`;
+    const command = commands[b.entry.id];
+    return command ? `${line}\n  ${command}` : line;
+  });
+  const hasCommands = breaches.some((b) => !b.expired && commands[b.entry.id]);
   return {
     title,
-    message: `Rule "${params.ruleName}" (threshold ${params.ledgersThreshold} ledgers):\n${lines.join('\n')}\nExtend the TTL (e.g. \`stellar contract extend\`) to keep these entries live.`,
+    message: `Rule "${params.ruleName}" (threshold ${params.ledgersThreshold} ledgers):\n${lines.join('\n')}\n${
+      hasCommands
+        ? 'Run the commands above with your own identity to extend the TTL and keep these entries live.'
+        : 'Extend the TTL (e.g. `stellar contract extend`) to keep these entries live.'
+    }`,
     context: {
       latestLedger: params.latestLedger,
       ledgersThreshold: params.ledgersThreshold,
@@ -106,6 +115,7 @@ export function describeTtl(params: {
         liveUntilLedger: b.entry.liveUntilLedger,
         ledgersRemaining: b.ledgersRemaining,
         expired: b.expired,
+        ...(commands[b.entry.id] && !b.expired ? { extendCommand: commands[b.entry.id] } : {}),
       })),
     },
   };
@@ -125,6 +135,25 @@ export function describeInactivity(params: {
       idleSeconds: params.idleSeconds,
       windowSeconds: params.windowSeconds,
       lastEventAt: params.lastEventAt?.toISOString() ?? null,
+    },
+  };
+}
+
+export function describeWasmChanged(params: {
+  ruleName: string;
+  contract: ContractRef;
+  previousWasmHash: string;
+  newWasmHash: string;
+  latestLedger: number;
+}): AlertDescription {
+  const { contract, previousWasmHash, newWasmHash } = params;
+  return {
+    title: `Contract WASM upgraded on ${contractName(contract)}`,
+    message: `Rule "${params.ruleName}": the contract on ${contract.network.toLowerCase()} now runs WASM ${newWasmHash} (was ${previousWasmHash}). If you did not expect this upgrade, investigate the transaction that changed it.`,
+    context: {
+      previousWasmHash,
+      newWasmHash,
+      detectedAtLedger: params.latestLedger,
     },
   };
 }
