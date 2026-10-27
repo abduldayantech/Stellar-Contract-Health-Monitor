@@ -37,13 +37,12 @@ import { ExtendCommand, needsExtending } from '@/components/extend-command';
 import { SilencesPanel } from '@/components/silences-panel';
 import { api, errorMessage, useApi } from '@/lib/api';
 import { describeRule } from '@/lib/rules';
-import type { ContractDetail, EventItem, Page, Silence, StorageEntry } from '@/lib/types';
+import type { ContractDetail, EventItem, Page, StorageEntry } from '@/lib/types';
 
 export default function ContractDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const contract = useApi<ContractDetail>(`/contracts/${id}`, { refreshInterval: 10_000 });
-  const silences = useApi<{ items: Silence[] }>(`/silences?contractRefId=${id}`);
   const events = useApi<Page<EventItem>>(`/events?contractRefId=${id}&limit=20`, {
     refreshInterval: 10_000,
   });
@@ -348,15 +347,6 @@ export default function ContractDetailPage() {
           )}
         </Card>
       </div>
-
-      <SilencesSection
-        silences={silences.data?.items}
-        contracts={[c]}
-        rules={c.alertRules}
-        contractRefId={c.id}
-        loading={silences.isLoading}
-        onChange={() => silences.mutate()}
-      />
 
       <Card className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400">
         <dl className="grid gap-2 sm:grid-cols-3">

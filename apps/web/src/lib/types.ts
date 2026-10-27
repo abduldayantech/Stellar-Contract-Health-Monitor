@@ -95,7 +95,6 @@ export interface AlertItem {
   title: string;
   message: string;
   context: Record<string, unknown>;
-  silenced: boolean;
   triggeredAt: string;
   acknowledgedAt: string | null;
   acknowledgedBy: string | null;

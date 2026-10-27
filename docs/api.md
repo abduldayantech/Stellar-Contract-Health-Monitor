@@ -124,18 +124,6 @@ command, and TTL alerts include the same command for entries that are still live
 | POST                 | `/destinations/:id/test`          | Queue a test notification                                                                                             |
 | GET                  | `/destinations/:id/deliveries`    | Last 50 deliveries                                                                                                    |
 
-### Silences
-
-| Method               | Path            | Description                      |
-| -------------------- | --------------- | -------------------------------- |
-| GET / POST           | `/silences`     | List / create a silence          |
-| GET / PATCH / DELETE | `/silences/:id` | Read / update / delete a silence |
-
-Create a one-time silence with `startsAt`, `endsAt`, and `reason`, and at least one of `contractRefId` or
-`ruleId`. Supplying both limits the silence to that contract/rule pair. Alerts are still recorded
-with `silenced: true` while the silence is active, but no notification deliveries are created.
-Expired silences stop applying automatically; their creator is recorded for auditing.
-
 Rule body:
 
 ```json
@@ -155,10 +143,10 @@ Rule body:
 
 ### Silences
 
-| Method               | Path            | Description                                  |
-| -------------------- | --------------- | -------------------------------------------- |
-| GET / POST           | `/silences`     | List (`?contractRefId&ruleId`) / create      |
-| GET / PATCH / DELETE | `/silences/:id` | Read / update / delete                      |
+| Method               | Path            | Description                             |
+| -------------------- | --------------- | --------------------------------------- |
+| GET / POST           | `/silences`     | List (`?contractRefId&ruleId`) / create |
+| GET / PATCH / DELETE | `/silences/:id` | Read / update / delete                  |
 
 Create a silence with at least one of `contractRefId` or `ruleId`, plus `startsAt`, `endsAt` and
 `reason`. When both scopes are supplied, the silence applies to their intersection. An omitted or

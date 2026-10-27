@@ -116,50 +116,6 @@ export const updateAlertRuleSchema = z.object({
   config: z.record(z.unknown()).optional(),
 });
 
-const silenceFields = {
-  contractRefId: z.string().nullable().optional(),
-  ruleId: z.string().nullable().optional(),
-  startsAt: z.coerce.date(),
-  endsAt: z.coerce.date(),
-  recurrence: z.enum(['DAILY', 'WEEKLY']).nullable().default(null),
-  timeZone: z
-    .string()
-    .min(1)
-    .max(100)
-    .refine((value) => {
-      try {
-        new Intl.DateTimeFormat('en', { timeZone: value });
-        return true;
-      } catch {
-        return false;
-      }
-    }, 'Must be a valid IANA timezone')
-    .default('UTC'),
-  reason: z.string().trim().min(1).max(500),
-};
-
-export const createSilenceSchema = z
-  .object(silenceFields)
-  .refine((value) => value.contractRefId || value.ruleId, {
-    message: 'A contract or rule scope is required',
-  })
-  .refine((value) => value.endsAt > value.startsAt, {
-    message: 'endsAt must be after startsAt',
-    path: ['endsAt'],
-  });
-
-export const updateSilenceSchema = z
-  .object({
-    contractRefId: silenceFields.contractRefId,
-    ruleId: silenceFields.ruleId,
-    startsAt: silenceFields.startsAt.optional(),
-    endsAt: silenceFields.endsAt.optional(),
-    recurrence: silenceFields.recurrence.optional(),
-    timeZone: silenceFields.timeZone.optional(),
-    reason: silenceFields.reason.optional(),
-  })
-  .refine((value) => Object.keys(value).length > 0, 'At least one field is required');
-
 export const webhookConfigSchema = z.object({
   url: z
     .string()
@@ -340,6 +296,20 @@ const silenceScopeSchema = z.object({
       .datetime()
       .transform((value) => new Date(value)),
   ]),
+  recurrence: z.enum(['DAILY', 'WEEKLY']).nullable().default(null),
+  timeZone: z
+    .string()
+    .min(1)
+    .max(100)
+    .refine((value) => {
+      try {
+        new Intl.DateTimeFormat('en', { timeZone: value });
+        return true;
+      } catch {
+        return false;
+      }
+    }, 'Must be a valid IANA timezone')
+    .default('UTC'),
   reason: z.string().trim().min(1).max(500),
 });
 

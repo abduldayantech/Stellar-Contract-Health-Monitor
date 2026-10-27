@@ -174,19 +174,7 @@ export async function triggerAlert(
 ): Promise<string> {
   const { rule, contract, description } = params;
   const now = deps.now();
-  const activeSilence = await deps.prisma.silence.findFirst({
-    where: {
-      startsAt: { lte: now },
-      endsAt: { gt: now },
-      AND: [
-        { OR: [{ contractRefId: null }, { contractRefId: contract.id }] },
-        { OR: [{ ruleId: null }, { ruleId: rule.id }] },
-      ],
-    },
-    select: { id: true },
-  });
-  const silenced = activeSilence !== null;
-  const destinationIds = silenced ? [] : await destinationsFor(deps, rule.id);
+  const destinationIds = await destinationsFor(deps, rule.id);
   const maxAttempts = deps.config.WEBHOOK_MAX_ATTEMPTS;
 
   const { alertId, deliveryIds, silenced } = await deps.prisma.$transaction(async (tx) => {
@@ -211,7 +199,6 @@ export async function triggerAlert(
         context: description.context as Prisma.InputJsonValue,
         silenced,
         triggeredAt: now,
-        silenced,
         deliveries: {
           create: (silenced ? [] : destinationIds).map((destinationId) => ({
             destinationId,

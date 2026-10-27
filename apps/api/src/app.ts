@@ -23,7 +23,6 @@ import { eventRoutes } from './routes/events';
 import { settingsRoutes } from './routes/settings';
 import { silenceRoutes } from './routes/silences';
 import { statusRoutes } from './routes/status';
-import { silenceRoutes } from './routes/silences';
 
 declare module 'fastify' {
   interface FastifyInstance {
