@@ -3,6 +3,7 @@ import type {
   EventMatchConfig,
   InactivityConfig,
   TtlExpiryConfig,
+  ValueCondition,
 } from '@stellar-health/shared-types';
 import { AVG_LEDGER_SECONDS } from '@stellar-health/shared-types';
 import { matchTopics } from './topics';
@@ -14,11 +15,52 @@ export interface EventLike {
   ledgerClosedAt: Date;
   txHash: string;
   inSuccessfulContractCall: boolean;
+  /** Decoded event value (JSON-safe; i128/u128 as decimal strings). */
+  value?: unknown;
+}
+
+/** Follows a dot-separated path into a decoded value; "" returns the value itself. */
+export function valueAtPath(value: unknown, path: string): unknown {
+  if (!path) return value;
+  let current: unknown = value;
+  for (const key of path.split('.')) {
+    if (current === null || typeof current !== 'object') return undefined;
+    current = (current as Record<string, unknown>)[key];
+  }
+  return current;
+}
+
+/** Reads integers from numbers or decimal strings without losing precision. */
+export function toBigInt(value: unknown): bigint | null {
+  if (typeof value === 'bigint') return value;
+  if (typeof value === 'number') return Number.isSafeInteger(value) ? BigInt(value) : null;
+  if (typeof value === 'string' && /^-?\d{1,80}$/.test(value.trim())) return BigInt(value.trim());
+  return null;
+}
+
+/** True when the value at `path` is an integer satisfying the comparison. */
+export function matchesValueCondition(condition: ValueCondition, value: unknown): boolean {
+  const actual = toBigInt(valueAtPath(value, condition.path));
+  if (actual === null) return false;
+  const expected = BigInt(condition.value);
+  switch (condition.op) {
+    case 'gt':
+      return actual > expected;
+    case 'gte':
+      return actual >= expected;
+    case 'lt':
+      return actual < expected;
+    case 'lte':
+      return actual <= expected;
+    case 'eq':
+      return actual === expected;
+  }
 }
 
 export function eventMatches(config: EventMatchConfig, event: EventLike): boolean {
   if (!config.includeFailedCalls && !event.inSuccessfulContractCall) return false;
-  return matchTopics(config.topics, event.topics);
+  if (!matchTopics(config.topics, event.topics)) return false;
+  return !config.valueCondition || matchesValueCondition(config.valueCondition, event.value);
 }
 
 export interface EventMatchResult {

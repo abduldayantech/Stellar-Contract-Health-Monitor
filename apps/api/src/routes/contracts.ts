@@ -18,6 +18,7 @@ import {
   validateContractId,
 } from '@stellar-health/stellar-client';
 import { HttpError, notFound } from '../lib/errors';
+import { toPage } from '../lib/pagination';
 import {
   serializeAlert,
   serializeContract,
@@ -94,16 +95,46 @@ export async function contractRoutes(app: FastifyInstance, deps: AppDeps) {
     },
   );
 
-  app.post(
-    '/contracts',
-    {
-      schema: doc({
-        tags,
-        summary: 'Register a contract for monitoring',
-        description:
-          'Starts monitoring the contract instance and code entries and queues the first event ingest.',
-        body: createContractSchema,
-        response: { 201: contractSchema },
+  app.get('/contracts', async (req) => {
+    const q = z
+      .object({
+        network: z.enum(['TESTNET', 'MAINNET', 'FUTURENET', 'LOCAL']).optional(),
+        status: z.enum(['ACTIVE', 'PAUSED', 'ERROR']).optional(),
+        search: z.string().max(120).optional(),
+        limit: z.coerce.number().int().min(1).max(500).default(100),
+        cursor: z.string().optional(),
+      })
+      .parse(req.query);
+    const rows = await prisma.contract.findMany({
+      where: {
+        network: q.network,
+        status: q.status,
+        ...(q.search
+          ? {
+              OR: [
+                { label: { contains: q.search, mode: 'insensitive' } },
+                { contractId: { contains: q.search.toUpperCase() } },
+              ],
+            }
+          : {}),
+      },
+      // id breaks ties so every contract appears exactly once across pages.
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: q.limit + 1,
+      ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}),
+    });
+    const { items: contracts, nextCursor } = toPage(rows, q.limit);
+    const ids = contracts.map((c) => c.id);
+    const [alertCounts, expiries, ledgers] = await Promise.all([
+      prisma.alert.groupBy({
+        by: ['contractRefId'],
+        where: { contractRefId: { in: ids }, status: 'TRIGGERED' },
+        _count: { _all: true },
+      }),
+      prisma.storageEntry.groupBy({
+        by: ['contractRefId'],
+        where: { contractRefId: { in: ids } },
+        _min: { liveUntilLedger: true },
       }),
     },
     async (req, reply) => {
@@ -116,12 +147,10 @@ export async function contractRoutes(app: FastifyInstance, deps: AppDeps) {
         throw new HttpError(409, 'ALREADY_REGISTERED', 'This contract is already being monitored', {
           id: existing.id,
         });
-      }
-
-      const health = await client.getHealth();
-      const lookback = body.lookbackLedgers ?? config.INITIAL_LOOKBACK_LEDGERS;
-      // The RPC only keeps a limited window of events; never ask for ledgers it no longer has.
-      const startLedger = Math.max(health.oldestLedger + 1, health.latestLedger - lookback);
+      }),
+      nextCursor,
+    };
+  });
 
       const storageEntries: Prisma.StorageEntryCreateWithoutContractInput[] = [
         {
@@ -246,40 +275,12 @@ export async function contractRoutes(app: FastifyInstance, deps: AppDeps) {
         params: idParams,
         response: { 200: contractDetailSchema },
       }),
-    },
-    async (req) => {
-      const { id } = idParams.parse(req.params);
-      const c = await prisma.contract.findUnique({
-        where: { id },
-        include: { storageEntries: { orderBy: { createdAt: 'asc' } } },
-      });
-      if (!c) throw notFound('Contract');
-      const [ledgers, openAlerts, rules, recentAlerts] = await Promise.all([
-        latestLedgers(),
-        prisma.alert.count({ where: { contractRefId: id, status: 'TRIGGERED' } }),
-        prisma.alertRule.findMany({
-          where: { OR: [{ contractRefId: id }, { contractRefId: null }] },
-          include: { destinations: { select: { id: true, name: true, type: true } } },
-          orderBy: { createdAt: 'asc' },
-        }),
-        prisma.alert.findMany({
-          where: { contractRefId: id },
-          orderBy: { triggeredAt: 'desc' },
-          take: 10,
-          include: { rule: { select: { id: true, name: true, type: true } } },
-        }),
-      ]);
-      const latest = ledgers.get(c.network as Network) ?? null;
-      const entries = c.storageEntries.map((s) => serializeStorageEntry(s, latest));
-      const remaining = entries
-        .map((e) => e.ledgersRemaining)
-        .filter((r): r is number => r !== null);
-      return {
-        ...serializeContract(c, {
-          latestLedger: latest,
-          openAlerts,
-          nearestExpiryLedgers: remaining.length ? Math.min(...remaining) : null,
-        }),
+    ]);
+    const latest = ledgers.get(c.network as Network) ?? null;
+    const entries = c.storageEntries.map((s) => serializeStorageEntry(s, latest, c.wasmHash));
+    const remaining = entries.map((e) => e.ledgersRemaining).filter((r): r is number => r !== null);
+    return {
+      ...serializeContract(c, {
         latestLedger: latest,
         storageEntries: entries,
         alertRules: rules.map(serializeRule),

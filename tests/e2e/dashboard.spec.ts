@@ -71,14 +71,18 @@ test('alert history shows failed notifications and supports acknowledge, retry a
   await page.getByRole('button', { name: /Failed notifications/ }).click();
 
   await page.getByRole('button', { name: 'Acknowledge', exact: true }).first().click();
+  await page.getByLabel('Note (optional)').fill('Known issue, extending TTL tomorrow');
+  await page.getByRole('button', { name: 'Acknowledge alert' }).click();
   await expect(page.getByRole('button', { name: 'Acknowledged (1)' })).toBeVisible();
 
   await page.getByText(SEED.alertTitle).first().click();
+  await expect(page.getByText('Known issue, extending TTL tomorrow')).toBeVisible();
   await expect(page.getByText('Webhook responded 500')).toBeVisible();
   await page.getByRole('button', { name: 'Retry', exact: true }).first().click();
   await expect(page.getByRole('button', { name: 'Failed notifications (0)' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Resolve', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Resolve alert' }).click();
   await expect(page.getByRole('button', { name: 'Resolved (1)' })).toBeVisible();
 });
 
@@ -96,4 +100,22 @@ test('settings manages API tokens', async ({ page }) => {
   await expect(
     page.getByTestId('audit-row').filter({ hasText: 'POST /settings/tokens' }).first(),
   ).toBeVisible();
+});
+
+test('theme switcher persists the choice across reloads', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto('/');
+  const html = page.locator('html');
+  await expect(html).not.toHaveClass(/dark/);
+  await page.getByRole('radio', { name: 'Dark' }).click();
+  await expect(html).toHaveClass(/dark/);
+
+  // The init script applies the stored theme before the app hydrates.
+  await page.reload();
+  await expect(html).toHaveClass(/dark/);
+  await expect(page.getByRole('radio', { name: 'Dark' })).toHaveAttribute('aria-checked', 'true');
+
+  await page.getByRole('radio', { name: 'System' }).click();
+  await expect(html).not.toHaveClass(/dark/);
 });

@@ -95,6 +95,11 @@ export const listEventsQuerySchema = z.object({
   cursor: z.string().optional(),
 });
 
+/** The events list filters, without paging, plus the file format. */
+export const exportEventsQuerySchema = listEventsQuerySchema
+  .omit({ limit: true, cursor: true })
+  .extend({ format: z.enum(['csv', 'ndjson']).default('csv') });
+
 const baseRuleSchema = z.object({
   name: z.string().trim().min(1).max(120),
   contractRefId: z.string().nullable().optional(),
@@ -121,6 +126,10 @@ export const createAlertRuleSchema = z.discriminatedUnion('type', [
   baseRuleSchema.extend({
     type: z.literal('INACTIVITY'),
     config: alertRuleConfigSchemas.INACTIVITY,
+  }),
+  baseRuleSchema.extend({
+    type: z.literal('WASM_CHANGED'),
+    config: alertRuleConfigSchemas.WASM_CHANGED.default({}),
   }),
 ]);
 
@@ -152,6 +161,36 @@ export const emailConfigSchema = z.object({
   to: z.array(z.string().email()).min(1).max(20),
 });
 
+/** Builds a schema for an https URL on one of the given hosts (chat incoming webhooks). */
+const httpsUrlOn = (hosts: string[], what: string) =>
+  z
+    .string()
+    .trim()
+    .url()
+    .max(2048)
+    .refine(
+      (u) => {
+        try {
+          const parsed = new URL(u);
+          return parsed.protocol === 'https:' && hosts.includes(parsed.hostname.toLowerCase());
+        } catch {
+          return false;
+        }
+      },
+      `${what} must be an https URL on ${hosts.join(' or ')}`,
+    );
+
+export const slackConfigSchema = z.object({
+  webhookUrl: httpsUrlOn(['hooks.slack.com'], 'Slack webhook URL'),
+});
+
+/** Config schema per destination type, for validating updates and stored configs. */
+export const destinationConfigSchemas = {
+  WEBHOOK: webhookConfigSchema,
+  EMAIL: emailConfigSchema,
+  SLACK: slackConfigSchema,
+} as const;
+
 export const createDestinationSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('WEBHOOK'),
@@ -164,6 +203,12 @@ export const createDestinationSchema = z.discriminatedUnion('type', [
     name: z.string().trim().min(1).max(120),
     enabled: z.boolean().default(true),
     config: emailConfigSchema,
+  }),
+  z.object({
+    type: z.literal('SLACK'),
+    name: z.string().trim().min(1).max(120),
+    enabled: z.boolean().default(true),
+    config: slackConfigSchema,
   }),
 ]);
 
@@ -182,6 +227,12 @@ export const listAlertsQuerySchema = z.object({
   cursor: z.string().optional(),
 });
 
+/** Optional body for POST /alerts/:id/acknowledge and /resolve. */
+export const alertActionSchema = z
+  .object({ note: z.string().trim().max(1000).optional() })
+  .optional()
+  .transform((b) => ({ note: b?.note ? b.note : null }));
+
 export const upsertNetworkConfigSchema = z.object({
   rpcUrl: z.string().url(),
   networkPassphrase: z.string().min(1).max(200).optional(),
@@ -195,6 +246,8 @@ export const createApiTokenSchema = z.object({
   name: z.string().trim().min(1).max(120),
   /** Least privilege by default. */
   role: z.enum(TOKEN_ROLES).default('VIEWER'),
+  /** Days until the token stops working. Omit (or null) for a token that never expires. */
+  expiresInDays: z.number().int().min(1).max(3650).nullable().optional(),
 });
 
 export const listAuditLogQuerySchema = z.object({

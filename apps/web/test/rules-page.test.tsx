@@ -47,7 +47,7 @@ vi.mock('@/lib/api', async (orig) => ({
     if (path === '/alert-rules') {
       return { data: { items: [rule] }, isLoading: false, mutate: mutateMock };
     }
-    if (path === '/contracts') {
+    if (path === '/contracts?limit=500') {
       return { data: { items: contracts }, isLoading: false, mutate: vi.fn() };
     }
     if (path === '/destinations') {

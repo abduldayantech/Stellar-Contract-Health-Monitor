@@ -175,65 +175,48 @@ export async function settingsRoutes(app: FastifyInstance, { prisma }: AppDeps) 
   );
 
   // ---- API tokens ----
-  app.get(
-    '/settings/tokens',
-    {
-      schema: doc({
-        tags,
-        summary: 'List API tokens',
-        response: { 200: tokenListSchema },
-      }),
-    },
-    async () => {
-      const rows = await prisma.apiToken.findMany({ orderBy: { createdAt: 'desc' } });
-      return {
-        items: rows.map((t) => ({
-          id: t.id,
-          name: t.name,
-          role: t.role,
-          prefix: t.prefix,
-          createdAt: t.createdAt,
-          lastUsedAt: t.lastUsedAt,
-          revokedAt: t.revokedAt,
-        })),
-      };
-    },
-  );
+  app.get('/settings/tokens', async () => {
+    const rows = await prisma.apiToken.findMany({ orderBy: { createdAt: 'desc' } });
+    return {
+      items: rows.map((t) => ({
+        id: t.id,
+        name: t.name,
+        role: t.role,
+        prefix: t.prefix,
+        createdAt: t.createdAt,
+        lastUsedAt: t.lastUsedAt,
+        revokedAt: t.revokedAt,
+        expiresAt: t.expiresAt,
+      })),
+    };
+  });
 
-  app.post(
-    '/settings/tokens',
-    {
-      schema: doc({
-        tags,
-        summary: 'Create an API token',
-        description: 'The plaintext token is only returned in this response.',
-        body: createApiTokenSchema,
-        response: { 201: createdTokenSchema },
-      }),
-    },
-    async (req, reply) => {
-      const body = createApiTokenSchema.parse(req.body);
-      const token = generateApiToken();
-      const row = await prisma.apiToken.create({
-        data: {
-          name: body.name,
-          role: body.role,
-          tokenHash: hashToken(token),
-          prefix: token.slice(0, 12),
-        },
-      });
-      reply.status(201);
-      // Plaintext token is returned exactly once.
-      return {
-        id: row.id,
-        name: row.name,
-        role: row.role,
-        prefix: row.prefix,
-        createdAt: row.createdAt,
-        token,
-      };
-    },
-  );
+  app.post('/settings/tokens', async (req, reply) => {
+    const body = createApiTokenSchema.parse(req.body);
+    const token = generateApiToken();
+    const row = await prisma.apiToken.create({
+      data: {
+        name: body.name,
+        role: body.role,
+        tokenHash: hashToken(token),
+        prefix: token.slice(0, 12),
+        expiresAt: body.expiresInDays
+          ? new Date(Date.now() + body.expiresInDays * 86400_000)
+          : null,
+      },
+    });
+    reply.status(201);
+    // Plaintext token is returned exactly once.
+    return {
+      id: row.id,
+      name: row.name,
+      role: row.role,
+      prefix: row.prefix,
+      createdAt: row.createdAt,
+      expiresAt: row.expiresAt,
+      token,
+    };
+  });
 
   app.delete(
     '/settings/tokens/:id',

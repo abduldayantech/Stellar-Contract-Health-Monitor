@@ -24,7 +24,7 @@ function RulesPage() {
   const params = useSearchParams();
   const presetContract = params.get('contractRefId') ?? '';
   const rules = useApi<Page<AlertRule>>('/alert-rules');
-  const contracts = useApi<Page<Contract>>('/contracts');
+  const contracts = useApi<Page<Contract>>('/contracts?limit=500');
   const destinations = useApi<Page<Destination>>('/destinations');
   const [showForm, setShowForm] = useState(Boolean(presetContract));
   const [editing, setEditing] = useState<AlertRule | null>(null);

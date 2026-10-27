@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { Prisma } from '@stellar-health/db';
-import { idParamsSchema, listAlertsQuerySchema } from '@stellar-health/shared-types';
+import { alertActionSchema, listAlertsQuerySchema } from '@stellar-health/shared-types';
 import { HttpError, notFound } from '../lib/errors';
 import { toPage } from '../lib/pagination';
 import { serializeAlert, serializeDelivery } from '../lib/serialize';
@@ -71,47 +71,46 @@ export async function alertRoutes(app: FastifyInstance, { prisma, jobs }: AppDep
     },
   );
 
-  app.get(
-    '/alerts/:id',
-    {
-      schema: doc({
-        tags,
-        summary: 'Get an alert',
-        params: idParamsSchema,
-        response: { 200: alertSchema },
-      }),
-    },
-    async (req) => {
-      const { id } = idParamsSchema.parse(req.params);
-      const a = await prisma.alert.findUnique({ where: { id }, include });
-      if (!a) throw notFound('Alert');
-      return serializeAlert(a);
-    },
-  );
+  app.post('/alerts/:id/acknowledge', async (req) => {
+    const { id } = z.object({ id: z.string() }).parse(req.params);
+    const { note } = alertActionSchema.parse(req.body);
+    const a = await prisma.alert.findUnique({ where: { id } });
+    if (!a) throw notFound('Alert');
+    if (a.status !== 'TRIGGERED')
+      throw new HttpError(409, 'INVALID_STATE', `Alert is already ${a.status.toLowerCase()}`);
+    const updated = await prisma.alert.update({
+      where: { id },
+      data: {
+        status: 'ACKNOWLEDGED',
+        acknowledgedAt: new Date(),
+        acknowledgedBy: req.principal?.name ?? null,
+        acknowledgeNote: note,
+      },
+      include,
+    });
+    return serializeAlert(updated);
+  });
 
-  app.post(
-    '/alerts/:id/acknowledge',
-    {
-      schema: doc({
-        tags,
-        summary: 'Acknowledge an alert',
-        description: 'Only triggered alerts can be acknowledged. No request body.',
-        params: idParamsSchema,
-        response: { 200: alertSchema },
-      }),
-    },
-    async (req) => {
-      const { id } = idParamsSchema.parse(req.params);
-      const a = await prisma.alert.findUnique({ where: { id } });
-      if (!a) throw notFound('Alert');
-      if (a.status !== 'TRIGGERED')
-        throw new HttpError(409, 'INVALID_STATE', `Alert is already ${a.status.toLowerCase()}`);
-      const updated = await prisma.alert.update({
+  app.post('/alerts/:id/resolve', async (req) => {
+    const { id } = z.object({ id: z.string() }).parse(req.params);
+    const { note } = alertActionSchema.parse(req.body);
+    const a = await prisma.alert.findUnique({ where: { id } });
+    if (!a) throw notFound('Alert');
+    if (a.status === 'RESOLVED')
+      throw new HttpError(409, 'INVALID_STATE', 'Alert is already resolved');
+    const updated = await prisma.$transaction(async (tx) => {
+      // Clear any open-alert pointer so level rules can fire again if the condition recurs.
+      await tx.alertRuleState.updateMany({
+        where: { openAlertId: id },
+        data: { openAlertId: null },
+      });
+      return tx.alert.update({
         where: { id },
         data: {
-          status: 'ACKNOWLEDGED',
-          acknowledgedAt: new Date(),
-          acknowledgedBy: req.principal?.name ?? null,
+          status: 'RESOLVED',
+          resolvedAt: new Date(),
+          resolvedBy: req.principal?.name ?? null,
+          resolveNote: note,
         },
         include,
       });

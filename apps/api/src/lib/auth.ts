@@ -62,6 +62,8 @@ export const authPlugin = fp<AuthOptions>(async (app: FastifyInstance, opts) => 
     const row = await opts.prisma.apiToken.findUnique({ where: { tokenHash: hashToken(token) } });
     if (!row || row.revokedAt)
       throw new HttpError(401, 'UNAUTHORIZED', 'Invalid or revoked API token');
+    if (row.expiresAt && row.expiresAt.getTime() <= Date.now())
+      throw new HttpError(401, 'TOKEN_EXPIRED', 'Token expired');
     req.principal = { type: 'token', id: row.id, name: row.name, role: row.role };
     const required = requiredRole(req.method, req.routeOptions.url ?? req.url);
     if (!hasRole(row.role, required)) {
