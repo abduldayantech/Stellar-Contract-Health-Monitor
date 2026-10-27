@@ -199,7 +199,7 @@ function HistoryPage() {
                       <p className="break-all text-sm font-medium text-slate-900 dark:text-slate-100">
                         {a.title}
                       </p>
-                      <p className="text-xs text-slate-500">
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
                         {a.rule?.name ?? (a.context?.system ? 'System' : 'Deleted rule')}
                         {a.contract && (
                           <>
@@ -294,7 +294,7 @@ function AlertDetails({ alert, onRetry }: { alert: AlertItem; onRetry: (d: Deliv
         )}
         {alert.resolvedAt && (
           <div>
-            <dt className="text-slate-500">Resolved</dt>
+            <dt className="text-slate-500 dark:text-slate-400">Resolved</dt>
             <dd>
               {formatDateTime(alert.resolvedAt)}{' '}
               {alert.resolvedBy ? `by ${alert.resolvedBy}` : '(condition cleared)'}
@@ -383,7 +383,7 @@ function AlertDetails({ alert, onRetry }: { alert: AlertItem; onRetry: (d: Deliv
 function AlertNote({ who, verb, text }: { who?: string | null; verb: string; text: string }) {
   return (
     <li className="rounded-md bg-white px-3 py-2 text-xs ring-1 ring-slate-200 dark:bg-slate-950 dark:ring-slate-800">
-      <p className="mb-0.5 text-slate-500">
+      <p className="mb-0.5 text-slate-500 dark:text-slate-400">
         {who ?? 'Someone'} {verb}:
       </p>
       <p className="whitespace-pre-line text-slate-800 dark:text-slate-200">{text}</p>

@@ -316,7 +316,7 @@ export function RuleForm({
             </div>
           )}
           {type === 'WASM_CHANGED' && (
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
               Checked with every storage TTL check (every few minutes). Triggers once per upgrade,
               with the old and new WASM hashes. Set the severity to critical if upgrades should page
               someone.

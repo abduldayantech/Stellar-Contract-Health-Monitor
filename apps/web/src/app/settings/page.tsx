@@ -318,7 +318,7 @@ function NetworkRow({ setting, onSaved }: { setting: NetworkSetting; onSaved: ()
         <div className="basis-full pl-[7.75rem] max-sm:pl-0">
           <Field
             label={
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-slate-500 dark:text-slate-400">
                 Backup URLs (optional, comma separated)
               </span>
             }
@@ -336,7 +336,7 @@ function NetworkRow({ setting, onSaved }: { setting: NetworkSetting; onSaved: ()
       </form>
       {active && setting.fallbackRpcUrls.length > 0 && (
         <p
-          className={`mt-1 text-xs ${active === setting.rpcUrl ? 'text-slate-500' : 'text-amber-600'}`}
+          className={`mt-1 text-xs ${active === setting.rpcUrl ? 'text-slate-500 dark:text-slate-400' : 'text-amber-600'}`}
         >
           {active === setting.rpcUrl ? 'Using the primary provider' : `Failed over to ${active}`}
         </p>
@@ -680,7 +680,10 @@ function SystemStatus() {
                   <li key={n.network} className="flex items-center gap-2">
                     <StatusDot tone={n.lastError ? 'red' : failedOver ? 'yellow' : 'green'} /> RPC{' '}
                     {n.network.toLowerCase()}
-                    <span className="ml-auto truncate text-xs text-slate-500" title={active ?? ''}>
+                    <span
+                      className="ml-auto truncate text-xs text-slate-500 dark:text-slate-400"
+                      title={active ?? ''}
+                    >
                       {failedOver ? 'backup ' : ''}
                       {active ? hostOf(active) : '—'}
                       {n.fallbackRpcUrls.length > 0 &&

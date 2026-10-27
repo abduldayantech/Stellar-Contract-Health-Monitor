@@ -60,7 +60,7 @@ export function ThemeSwitcher({ className }: { className?: string }) {
             'flex-1 rounded px-2 py-1 font-medium',
             choice === c
               ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-950 dark:text-slate-100'
-              : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200',
+              : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white',
           )}
         >
           {LABELS[c]}

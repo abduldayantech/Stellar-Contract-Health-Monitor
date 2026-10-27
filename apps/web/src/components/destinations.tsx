@@ -194,7 +194,7 @@ export function DestinationsCard({
                   {d.name} <Badge>{d.type.toLowerCase()}</Badge>{' '}
                   {!d.enabled && <Badge tone="slate">disabled</Badge>}
                 </p>
-                <p className="truncate text-xs text-slate-500">
+                <p className="truncate text-xs text-slate-500 dark:text-slate-400">
                   {d.type === 'WEBHOOK'
                     ? d.config.url
                     : d.type === 'EMAIL'

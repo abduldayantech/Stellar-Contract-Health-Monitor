@@ -523,7 +523,9 @@ function StorageRow({
         <Td>
           <TtlBar ledgersRemaining={entry.exists ? entry.ledgersRemaining : 0} />
         </Td>
-        <Td className="whitespace-nowrap text-xs text-slate-500">{timeAgo(entry.lastCheckedAt)}</Td>
+        <Td className="whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">
+          {timeAgo(entry.lastCheckedAt)}
+        </Td>
         <Td className="whitespace-nowrap">
           {entry.exists && entry.extend && (
             <button
@@ -531,7 +533,7 @@ function StorageRow({
               className={
                 soon
                   ? 'mr-3 text-xs font-medium text-amber-700 hover:underline dark:text-amber-400'
-                  : 'mr-3 text-xs text-slate-500 hover:underline'
+                  : 'mr-3 text-xs text-slate-500 dark:text-slate-400 hover:underline'
               }
               aria-expanded={open}
               onClick={() => setOpen((o) => !o)}
