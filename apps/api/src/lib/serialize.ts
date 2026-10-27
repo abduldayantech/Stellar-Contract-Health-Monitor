@@ -7,7 +7,8 @@ import type {
   NotificationDestination,
   StorageEntry,
 } from '@stellar-health/db';
-import { AVG_LEDGER_SECONDS } from '@stellar-health/shared-types';
+import { AVG_LEDGER_SECONDS, type ExtendTarget } from '@stellar-health/shared-types';
+import { extendTargetForLedgerKey } from '@stellar-health/stellar-client';
 
 export function serializeContract(
   c: Contract,
@@ -65,7 +66,20 @@ export function contractHealth(
   return 'healthy';
 }
 
-export function serializeStorageEntry(s: StorageEntry, latestLedger: number | null) {
+/** Decodes the stored key; falls back on the entry kind when the key can't be decoded. */
+function extendTarget(s: StorageEntry, wasmHash: string | null): ExtendTarget | null {
+  const decoded = extendTargetForLedgerKey(s.ledgerKeyXdr);
+  if (decoded) return decoded;
+  if (s.kind === 'INSTANCE') return { kind: 'instance' };
+  if (s.kind === 'CODE' && wasmHash) return { kind: 'code', wasmHash };
+  return null;
+}
+
+export function serializeStorageEntry(
+  s: StorageEntry,
+  latestLedger: number | null,
+  wasmHash: string | null = null,
+) {
   const remaining =
     s.liveUntilLedger !== null && latestLedger ? s.liveUntilLedger - latestLedger : null;
   return {
@@ -83,6 +97,8 @@ export function serializeStorageEntry(s: StorageEntry, latestLedger: number | nu
     lastCheckedLedger: s.lastCheckedLedger,
     lastCheckedAt: s.lastCheckedAt,
     lastError: s.lastError,
+    /** How to pass this entry to `stellar contract extend`. */
+    extend: extendTarget(s, wasmHash),
   };
 }
 
@@ -111,19 +127,41 @@ function maskSecret(secret: unknown): string | null {
   return `${secret.slice(0, 6)}…${secret.slice(-4)}`;
 }
 
+/** Shows enough of a credential-bearing URL to recognise it, e.g. `https://hooks.slack.com/…a1b2`. */
+export function maskUrl(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length === 0) return null;
+  try {
+    return `${new URL(value).origin}/…${value.slice(-4)}`;
+  } catch {
+    return `…${value.slice(-4)}`;
+  }
+}
+
+function safeDestinationConfig(
+  type: NotificationDestination['type'],
+  config: Record<string, unknown>,
+  opts: { revealSecret?: boolean },
+) {
+  switch (type) {
+    case 'WEBHOOK':
+      return {
+        url: config.url,
+        headers: config.headers ? Object.keys(config.headers as object) : [],
+        secret: opts.revealSecret ? config.secret : maskSecret(config.secret),
+      };
+    case 'EMAIL':
+      return { to: config.to };
+    case 'SLACK':
+      return { webhookUrl: maskUrl(config.webhookUrl) };
+  }
+}
+
 export function serializeDestination(
   d: NotificationDestination,
   opts: { revealSecret?: boolean } = {},
 ) {
   const config = (d.config ?? {}) as Record<string, unknown>;
-  const safeConfig =
-    d.type === 'WEBHOOK'
-      ? {
-          url: config.url,
-          headers: config.headers ? Object.keys(config.headers as object) : [],
-          secret: opts.revealSecret ? config.secret : maskSecret(config.secret),
-        }
-      : { to: config.to };
+  const safeConfig = safeDestinationConfig(d.type, config, opts);
   return {
     id: d.id,
     name: d.name,
@@ -201,7 +239,10 @@ export function serializeAlert(
     triggeredAt: a.triggeredAt,
     acknowledgedAt: a.acknowledgedAt,
     acknowledgedBy: a.acknowledgedBy,
+    acknowledgeNote: a.acknowledgeNote,
     resolvedAt: a.resolvedAt,
+    resolvedBy: a.resolvedBy,
+    resolveNote: a.resolveNote,
     rule: a.rule ?? null,
     contract: a.contract ?? null,
     deliveries: a.deliveries?.map(serializeDelivery) ?? [],

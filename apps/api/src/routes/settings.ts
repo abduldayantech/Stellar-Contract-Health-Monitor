@@ -108,6 +108,7 @@ export async function settingsRoutes(app: FastifyInstance, { prisma }: AppDeps) 
         createdAt: t.createdAt,
         lastUsedAt: t.lastUsedAt,
         revokedAt: t.revokedAt,
+        expiresAt: t.expiresAt,
       })),
     };
   });
@@ -121,6 +122,9 @@ export async function settingsRoutes(app: FastifyInstance, { prisma }: AppDeps) 
         role: body.role,
         tokenHash: hashToken(token),
         prefix: token.slice(0, 12),
+        expiresAt: body.expiresInDays
+          ? new Date(Date.now() + body.expiresInDays * 86400_000)
+          : null,
       },
     });
     reply.status(201);
@@ -131,6 +135,7 @@ export async function settingsRoutes(app: FastifyInstance, { prisma }: AppDeps) 
       role: row.role,
       prefix: row.prefix,
       createdAt: row.createdAt,
+      expiresAt: row.expiresAt,
       token,
     };
   });

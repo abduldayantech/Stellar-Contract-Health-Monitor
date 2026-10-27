@@ -26,6 +26,8 @@ const envSchema = z.object({
   STORAGE_CHECK_INTERVAL_MS: z.coerce.number().int().min(10_000).default(300_000),
   INACTIVITY_CHECK_INTERVAL_MS: z.coerce.number().int().min(10_000).default(60_000),
   EVENT_RETENTION_DAYS: z.coerce.number().int().min(0).default(30),
+  /** Delete audit log rows older than this many days; 0 keeps them forever. */
+  AUDIT_LOG_RETENTION_DAYS: z.coerce.number().int().min(0).default(365),
   WEBHOOK_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60_000).default(10_000),
   WEBHOOK_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(6),
   WEBHOOK_BLOCK_PRIVATE_IPS: bool(false),

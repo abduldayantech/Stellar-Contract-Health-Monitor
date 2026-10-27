@@ -53,11 +53,12 @@ Events that were backfilled when a contract or rule was created never trigger al
 
 ## Alert rules
 
-| Type          | Fires when                                                                                                                      | Kind                                                            |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| `EVENT_MATCH` | New events match a positional topic filter (`*` = any one topic, `**` = any rest), optionally at least _N_ within a time window | Edge: one alert per match, limited by the rule cooldown         |
-| `TTL_EXPIRY`  | A monitored storage entry has fewer than _N_ ledgers left before it is archived, or is already gone                             | Level: stays open until the TTL is extended, then auto-resolves |
-| `INACTIVITY`  | A contract has emitted no events for a period                                                                                   | Level: auto-resolves when events resume                         |
+| Type           | Fires when                                                                                                                      | Kind                                                            |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `EVENT_MATCH`  | New events match a positional topic filter (`*` = any one topic, `**` = any rest), optionally at least _N_ within a time window | Edge: one alert per match, limited by the rule cooldown         |
+| `TTL_EXPIRY`   | A monitored storage entry has fewer than _N_ ledgers left before it is archived, or is already gone                             | Level: stays open until the TTL is extended, then auto-resolves |
+| `INACTIVITY`   | A contract has emitted no events for a period                                                                                   | Level: auto-resolves when events resume                         |
+| `WASM_CHANGED` | The contract's WASM hash differs from the one last seen (an upgrade); checked with each storage TTL check                       | Edge: one alert per upgrade, with old and new hashes            |
 
 Rules can target one contract or all contracts. Each alert creates one delivery per destination
 (the rule's own, or the default destinations from Settings).

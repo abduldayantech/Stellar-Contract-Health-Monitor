@@ -71,6 +71,62 @@ describe('RuleForm', () => {
     expect(onSaved).toHaveBeenCalled();
   });
 
+  it('adds a numeric value condition and keeps it when editing', async () => {
+    const user = userEvent.setup();
+    const created = render(
+      <RuleForm
+        rule={null}
+        contracts={[]}
+        destinations={[]}
+        onCancel={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+    await user.type(screen.getByLabelText('Name'), 'Whales');
+    await user.click(screen.getByRole('checkbox', { name: /numeric value/ }));
+    await user.selectOptions(screen.getByLabelText('Comparison'), 'gt');
+    await user.type(screen.getByLabelText(/^Value$/), '10000000000000000000');
+    await user.click(screen.getByRole('button', { name: 'Create rule' }));
+    expect(apiMock.mock.calls[0]![1].body.config).toMatchObject({
+      valueCondition: { path: 'amount', op: 'gt', value: '10000000000000000000' },
+    });
+
+    apiMock.mockReset();
+    created.unmount();
+    const rule = {
+      id: 'r2',
+      name: 'Whales',
+      type: 'EVENT_MATCH',
+      config: {
+        topics: [],
+        threshold: 1,
+        windowSeconds: 300,
+        valueCondition: { path: '0', op: 'lte', value: '5' },
+      },
+      cooldownSeconds: 0,
+      severity: 'INFO',
+      enabled: true,
+      contractRefId: null,
+      destinations: [],
+    } as unknown as AlertRule;
+    render(
+      <RuleForm
+        rule={rule}
+        contracts={[]}
+        destinations={[]}
+        onCancel={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+    expect(screen.getByLabelText('Value path')).toHaveValue('0');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    expect(apiMock.mock.calls[0]![1].body.config.valueCondition).toEqual({
+      path: '0',
+      op: 'lte',
+      value: '5',
+    });
+  });
+
   it('converts TTL days to ledgers', async () => {
     const user = userEvent.setup();
     render(

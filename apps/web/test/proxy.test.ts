@@ -46,6 +46,25 @@ describe('API proxy', () => {
     expect(init.body).toBe('{"a":1}');
   });
 
+  it('streams downloads through with their content disposition', async () => {
+    fetchMock.mockResolvedValue(
+      new Response('ledger\r\n1\r\n', {
+        status: 200,
+        headers: {
+          'content-type': 'text/csv; charset=utf-8',
+          'content-disposition': 'attachment; filename="events.csv"',
+        },
+      }),
+    );
+    const res = await GET(
+      new NextRequest('http://localhost/api/proxy/events/export?format=csv'),
+      ctx('events', 'export'),
+    );
+    expect(res.headers.get('content-disposition')).toBe('attachment; filename="events.csv"');
+    expect(res.headers.get('content-type')).toBe('text/csv; charset=utf-8');
+    expect(await res.text()).toBe('ledger\r\n1\r\n');
+  });
+
   it('rejects requests without a session and reports an unreachable API', async () => {
     cookieValue = undefined;
     const noSession = await GET(

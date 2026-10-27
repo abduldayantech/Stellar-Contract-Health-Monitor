@@ -4,10 +4,12 @@ import {
   WEBHOOK_SIGNATURE_HEADER,
   WEBHOOK_TIMESTAMP_HEADER,
   emailConfigSchema,
+  slackConfigSchema,
   webhookConfigSchema,
   type WebhookPayload,
 } from '@stellar-health/shared-types';
-import { openWebhookConfig } from '@stellar-health/db';
+import { openDestinationConfig } from '@stellar-health/db';
+import { chatMessage, slackMessage } from './chat';
 import type { WorkerDeps } from './deps';
 import { recordDestinationFailure, recordDestinationSuccess } from './destination-health';
 import { assertPublicUrl } from './ssrf';
@@ -76,14 +78,47 @@ export async function buildPayload(deps: WorkerDeps, deliveryId: string): Promis
   };
 }
 
-async function sendWebhook(deps: DeliveryDeps, config: unknown, payload: WebhookPayload) {
-  let opened: Record<string, unknown>;
+function openConfig(deps: DeliveryDeps, config: unknown): Record<string, unknown> {
   try {
-    opened = openWebhookConfig(deps.secrets, config);
+    return openDestinationConfig(deps.secrets, config);
   } catch (err) {
     throw new PermanentDeliveryError(`Cannot read webhook secret: ${(err as Error).message}`);
   }
-  const parsed = webhookConfigSchema.safeParse(opened);
+}
+
+/**
+ * POSTs JSON and classifies the response: 2xx returns the status, 408/429/5xx throw a
+ * retryable error, anything else (other 4xx, redirects) throws a PermanentDeliveryError.
+ */
+async function postJson(
+  deps: DeliveryDeps,
+  url: string,
+  body: string,
+  headers: Record<string, string> = {},
+): Promise<number> {
+  const res = await (deps.fetchImpl ?? fetch)(url, {
+    method: 'POST',
+    redirect: 'manual',
+    signal: AbortSignal.timeout(deps.config.WEBHOOK_TIMEOUT_MS),
+    headers: {
+      ...headers,
+      'content-type': 'application/json',
+      'user-agent': 'stellar-contract-health-monitor/1.0',
+    },
+    body,
+  });
+  if (res.ok) return res.status;
+  const text = (await res.text().catch(() => '')).slice(0, 300);
+  const msg = `Destination responded ${res.status}${text ? `: ${text}` : ''}`;
+  // 408/429 and 5xx are worth retrying; other 4xx (and redirects) won't fix themselves.
+  if (res.status === 408 || res.status === 429 || res.status >= 500) {
+    throw Object.assign(new Error(msg), { responseStatus: res.status });
+  }
+  throw Object.assign(new PermanentDeliveryError(msg), { responseStatus: res.status });
+}
+
+async function sendWebhook(deps: DeliveryDeps, config: unknown, payload: WebhookPayload) {
+  const parsed = webhookConfigSchema.safeParse(openConfig(deps, config));
   if (!parsed.success || !parsed.data.secret)
     throw new PermanentDeliveryError('Invalid webhook configuration');
   const { url, secret, headers } = parsed.data;
@@ -96,28 +131,19 @@ async function sendWebhook(deps: DeliveryDeps, config: unknown, payload: Webhook
   }
   const body = JSON.stringify(payload);
   const timestamp = Math.floor(deps.now().getTime() / 1000);
-  const res = await (deps.fetchImpl ?? fetch)(url, {
-    method: 'POST',
-    redirect: 'manual',
-    signal: AbortSignal.timeout(deps.config.WEBHOOK_TIMEOUT_MS),
-    headers: {
-      ...headers,
-      'content-type': 'application/json',
-      'user-agent': 'stellar-contract-health-monitor/1.0',
-      [WEBHOOK_SIGNATURE_HEADER]: signWebhook(secret, timestamp, body),
-      [WEBHOOK_TIMESTAMP_HEADER]: String(timestamp),
-      [WEBHOOK_DELIVERY_HEADER]: payload.deliveryId,
-    },
-    body,
+  return postJson(deps, url, body, {
+    ...headers,
+    [WEBHOOK_SIGNATURE_HEADER]: signWebhook(secret, timestamp, body),
+    [WEBHOOK_TIMESTAMP_HEADER]: String(timestamp),
+    [WEBHOOK_DELIVERY_HEADER]: payload.deliveryId,
   });
-  if (res.ok) return res.status;
-  const text = (await res.text().catch(() => '')).slice(0, 300);
-  const msg = `Webhook responded ${res.status}${text ? `: ${text}` : ''}`;
-  // 408/429 and 5xx are worth retrying; other 4xx (and redirects) won't fix themselves.
-  if (res.status === 408 || res.status === 429 || res.status >= 500) {
-    throw Object.assign(new Error(msg), { responseStatus: res.status });
-  }
-  throw Object.assign(new PermanentDeliveryError(msg), { responseStatus: res.status });
+}
+
+async function sendSlack(deps: DeliveryDeps, config: unknown, payload: WebhookPayload) {
+  const parsed = slackConfigSchema.safeParse(openConfig(deps, config));
+  if (!parsed.success) throw new PermanentDeliveryError('Invalid Slack configuration');
+  const message = slackMessage(chatMessage(payload, deps.config.PUBLIC_DASHBOARD_URL));
+  return postJson(deps, parsed.data.webhookUrl, JSON.stringify(message));
 }
 
 async function sendEmail(deps: DeliveryDeps, config: unknown, payload: WebhookPayload) {
@@ -162,9 +188,18 @@ export async function deliverNotification(
   try {
     if (!delivery.destination.enabled) throw new PermanentDeliveryError('Destination is disabled');
     const payload = await buildPayload(deps, deliveryId);
-    if (type === 'WEBHOOK')
-      responseStatus = await sendWebhook(deps, delivery.destination.config, payload);
-    else await sendEmail(deps, delivery.destination.config, payload);
+    const config = delivery.destination.config;
+    switch (type) {
+      case 'WEBHOOK':
+        responseStatus = await sendWebhook(deps, config, payload);
+        break;
+      case 'EMAIL':
+        await sendEmail(deps, config, payload);
+        break;
+      case 'SLACK':
+        responseStatus = await sendSlack(deps, config, payload);
+        break;
+    }
 
     await deps.prisma.notificationDelivery.update({
       where: { id: deliveryId },

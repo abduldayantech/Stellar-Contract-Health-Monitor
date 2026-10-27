@@ -6,6 +6,12 @@ import { useState, type FormEvent } from 'react';
 import { Alert, Button, Card, Field, Input, Mono, Select, formatLedgers } from '@stellar-health/ui';
 import { PageHeader } from '@/components/app-shell';
 import { api, ApiError, errorMessage } from '@/lib/api';
+import {
+  BACKFILL_OPTIONS,
+  backfillLedgers,
+  DEFAULT_BACKFILL,
+  type BackfillChoice,
+} from '@/lib/backfill';
 import { NETWORK_OPTIONS, type Contract, type Network } from '@/lib/types';
 
 interface Validation {
@@ -26,6 +32,7 @@ export default function AddContractPage() {
   const [contractId, setContractId] = useState('');
   const [network, setNetwork] = useState<Network>('TESTNET');
   const [label, setLabel] = useState('');
+  const [backfill, setBackfill] = useState<BackfillChoice>(DEFAULT_BACKFILL);
   const [validation, setValidation] = useState<Validation | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [validating, setValidating] = useState(false);
@@ -72,7 +79,12 @@ export default function AddContractPage() {
     try {
       const c = await api<Contract>('/contracts', {
         method: 'POST',
-        body: { contractId: trimmed, network, label: label.trim() || undefined },
+        body: {
+          contractId: trimmed,
+          network,
+          label: label.trim() || undefined,
+          lookbackLedgers: backfillLedgers(backfill),
+        },
       });
       router.push(`/contracts/${c.id}`);
     } catch (err) {
@@ -140,6 +152,24 @@ export default function AddContractPage() {
               />
             </Field>
           </div>
+
+          <Field
+            label="Backfill history"
+            htmlFor="backfill"
+            hint="Events older than the RPC's retention window can't be fetched: public RPCs keep about 7 days (less on some providers), so longer backfills start at the oldest ledger available."
+          >
+            <Select
+              id="backfill"
+              value={backfill}
+              onChange={(e) => setBackfill(e.target.value as BackfillChoice)}
+            >
+              {BACKFILL_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
 
           {error && <Alert title="Could not validate contract">{error}</Alert>}
 
@@ -216,7 +246,7 @@ export default function AddContractPage() {
         </form>
       </Card>
       <p className="mt-4 text-xs text-slate-500 dark:text-slate-400">
-        Recent history is backfilled within the RPC retention window (about 7 days on public testnet
+        Backfilled history is limited to the RPC retention window (about 7 days on public testnet
         RPC). Older events are not available from RPC.
       </p>
     </div>

@@ -32,6 +32,7 @@ enum AlertRuleType {
   EVENT_MATCH
   TTL_EXPIRY
   INACTIVITY
+  WASM_CHANGED
 }
 
 enum AlertSeverity {
@@ -49,6 +50,7 @@ enum AlertStatus {
 enum DestinationType {
   WEBHOOK
   EMAIL
+  SLACK
 }
 
 enum DeliveryStatus {
@@ -197,7 +199,7 @@ model NotificationDestination {
   name       String
   type       DestinationType
   enabled    Boolean                @default(true)
-  /// WEBHOOK: { url, secret, headers? }  EMAIL: { to: string[] }
+  /// WEBHOOK: { url, secret, headers? }  EMAIL: { to: string[] }  SLACK: { webhookUrl }
   config     Json
   createdAt  DateTime               @default(now())
   updatedAt  DateTime               @updatedAt
@@ -227,7 +229,13 @@ model Alert {
   triggeredAt    DateTime               @default(now())
   acknowledgedAt DateTime?
   acknowledgedBy String?
+  /// Optional note left by the responder when acknowledging.
+  acknowledgeNote String?
   resolvedAt     DateTime?
+  /// Who resolved it by hand; null when the condition cleared on its own.
+  resolvedBy     String?
+  /// Optional note left when resolving.
+  resolveNote    String?
   deliveries     NotificationDelivery[]
 
   @@index([triggeredAt(sort: Desc)])
@@ -278,6 +286,8 @@ model ApiToken {
   createdAt  DateTime  @default(now())
   lastUsedAt DateTime?
   revokedAt  DateTime?
+  /// Tokens past this time are rejected like revoked ones. Null means the token never expires.
+  expiresAt  DateTime?
 }
 
 model Setting {
