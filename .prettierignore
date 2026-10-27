@@ -5,3 +5,6 @@ coverage
 playwright-report
 test-results
 packages/db/prisma/migrations
+
+# Helm templates are Go templates, not YAML
+deploy/helm/*/templates/
