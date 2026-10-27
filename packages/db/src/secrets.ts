@@ -55,11 +55,15 @@ export function createSecretBox(keyMaterial?: string | null): SecretBox {
   };
 }
 
-type WebhookConfigLike = { secret?: unknown; headers?: unknown } & Record<string, unknown>;
+/** Top-level destination config fields that hold credentials and are encrypted at rest. */
+export const SENSITIVE_CONFIG_KEYS = ['secret', 'webhookUrl', 'botToken'] as const;
 
 function mapSensitive(config: unknown, fn: (v: string) => string): Record<string, unknown> {
-  const c = { ...((config ?? {}) as WebhookConfigLike) };
-  if (typeof c.secret === 'string') c.secret = fn(c.secret);
+  const c = { ...((config ?? {}) as Record<string, unknown>) };
+  for (const key of SENSITIVE_CONFIG_KEYS) {
+    const value = c[key];
+    if (typeof value === 'string') c[key] = fn(value);
+  }
   if (c.headers && typeof c.headers === 'object') {
     c.headers = Object.fromEntries(
       Object.entries(c.headers as Record<string, unknown>).map(([k, v]) => [
@@ -71,12 +75,20 @@ function mapSensitive(config: unknown, fn: (v: string) => string): Record<string
   return c;
 }
 
-/** Encrypts the secret and header values of a webhook destination config. */
-export function sealWebhookConfig(box: SecretBox, config: unknown): Record<string, unknown> {
+/**
+ * Encrypts the credential fields of a destination config: webhook secrets and header values,
+ * chat webhook URLs and bot tokens. Other fields (and email configs) pass through unchanged.
+ */
+export function sealDestinationConfig(box: SecretBox, config: unknown): Record<string, unknown> {
   return mapSensitive(config, (v) => box.seal(v));
 }
 
-/** Decrypts the secret and header values of a webhook destination config. */
-export function openWebhookConfig(box: SecretBox, config: unknown): Record<string, unknown> {
+/** Decrypts the fields sealed by `sealDestinationConfig`. */
+export function openDestinationConfig(box: SecretBox, config: unknown): Record<string, unknown> {
   return mapSensitive(config, (v) => box.open(v));
 }
+
+/** @deprecated Use sealDestinationConfig. */
+export const sealWebhookConfig = sealDestinationConfig;
+/** @deprecated Use openDestinationConfig. */
+export const openWebhookConfig = openDestinationConfig;

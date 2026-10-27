@@ -6,7 +6,8 @@ import type { Redis } from 'ioredis';
 import type { PrismaClient, SecretBox } from '@stellar-health/db';
 import type { ApiConfig } from './config';
 import { authPlugin } from './lib/auth';
-import { errorHandler } from './lib/errors';
+import { errorHandler, sendError } from './lib/errors';
+import { REQUEST_ID_HEADER, requestIdFor } from './lib/request-id';
 import type { JobBus } from './lib/jobs';
 import type { ApiMetrics } from './lib/metrics';
 import type { StellarClientFactory } from './lib/stellar';
@@ -42,6 +43,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
             ...(config.NODE_ENV === 'development' ? { transport: { target: 'pino-pretty' } } : {}),
           },
     trustProxy: config.TRUST_PROXY,
+    // Validated in requestIdFor; Fastify would otherwise trust the header verbatim.
+    requestIdHeader: false,
+    genReqId: requestIdFor,
     bodyLimit: 256 * 1024,
   });
 
@@ -64,11 +68,16 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     }
   });
 
+  app.addHook('onSend', async (req, reply) => {
+    reply.header(REQUEST_ID_HEADER, req.id);
+  });
+
   app.setErrorHandler(errorHandler);
   app.setNotFoundHandler((req, reply) => {
-    reply
-      .status(404)
-      .send({ error: { code: 'NOT_FOUND', message: `Route ${req.method} ${req.url} not found` } });
+    sendError(req, reply, 404, {
+      code: 'NOT_FOUND',
+      message: `Route ${req.method} ${req.url} not found`,
+    });
   });
 
   await app.register(helmet, { contentSecurityPolicy: false });

@@ -17,6 +17,60 @@ the API over the internal network.
 Put a TLS-terminating reverse proxy (Caddy, nginx, a cloud load balancer) in front of the
 dashboard and set `SESSION_COOKIE_SECURE=true` and `PUBLIC_DASHBOARD_URL=https://…`.
 
+## Kubernetes (Helm)
+
+The chart in `deploy/helm/stellar-health` deploys the API, worker and dashboard from the GHCR
+images, plus an optional single-pod Postgres and Redis for evaluation.
+
+```bash
+helm install health deploy/helm/stellar-health -n stellar-health --create-namespace \
+  --set secrets.adminApiToken="$(openssl rand -hex 32)" \
+  --set secrets.encryptionKey="$(openssl rand -base64 32)" \
+  --set config.mainnetRpcUrl=https://your-rpc.example.com   # optional
+kubectl -n stellar-health port-forward svc/health-stellar-health-web 3000:3000
+```
+
+Without an Ingress, `NOTES.txt` prints the port-forward command after install.
+
+**Migrations.** Every API and worker pod runs `prisma migrate deploy` in an init container, so a
+new pod starts only once the schema is current. Prisma takes an advisory lock, so replicas
+starting at the same time are safe. Set `migrations.enabled=false` to run them yourself.
+
+**Production setup.** Use a managed database and Redis and keep secrets out of values files:
+
+```bash
+kubectl -n stellar-health create secret generic health-app \
+  --from-literal=ADMIN_API_TOKEN=… --from-literal=SECRETS_ENCRYPTION_KEY=… \
+  --from-literal=DATABASE_URL=postgresql://… --from-literal=REDIS_URL=redis://…
+helm install health deploy/helm/stellar-health -n stellar-health \
+  --set existingSecret=health-app --set postgresql.enabled=false --set redis.enabled=false \
+  --set ingress.enabled=true --set ingress.className=nginx --set ingress.host=health.example.com \
+  --set 'ingress.tls[0].secretName=health-tls' --set 'ingress.tls[0].hosts[0]=health.example.com' \
+  --set web.secureCookies=true --set api.autoscaling.enabled=true
+```
+
+The Secret may also hold `METRICS_TOKEN` and `SMTP_PASSWORD`.
+
+| Value                                         | Default            | Purpose                                                   |
+| --------------------------------------------- | ------------------ | --------------------------------------------------------- |
+| `image.tag`                                   | chart `appVersion` | Image version for all three components                    |
+| `existingSecret`                              | `''`               | Use your own Secret instead of `secrets.*`                |
+| `postgresql.enabled` / `externalDatabase.url` | `true` / `''`      | Bundled Postgres, or a URL for your own                   |
+| `redis.enabled` / `externalRedis.url`         | `true` / `''`      | Bundled Redis, or a URL for your own                      |
+| `api.replicas`, `api.autoscaling.*`           | `2`, off           | API replicas or a CPU-based HorizontalPodAutoscaler       |
+| `worker.replicas`                             | `1`                | Workers share the queues (see [Scaling](#scaling))        |
+| `ingress.*`                                   | off                | Ingress for the dashboard; the API stays cluster-internal |
+| `web.secureCookies`                           | `false`            | Set `true` when the dashboard is served over HTTPS        |
+| `config.*`                                    | see values.yaml    | RPC URLs, log level, retention, SMTP and `extraEnv`       |
+
+All pods run as non-root (UID 1000) with a read-only root filesystem, no capabilities and the
+`RuntimeDefault` seccomp profile; `/tmp` is an `emptyDir`. Probes: API `/health` (liveness) and
+`/ready` (readiness), worker `:4001/health`, web `/api/health`. The worker Service exposes
+`:4001/metrics` for Prometheus.
+
+The generated Postgres password is kept in the `<release>-stellar-health-postgresql` Secret,
+which survives `helm uninstall` along with the data volume. Delete both to start fresh.
+
 ## Images
 
 `docker/Dockerfile` builds three images, published to GHCR on version tags by
@@ -56,6 +110,7 @@ See [`.env.example`](../.env.example) for every variable. The important ones:
 | `INGEST_INTERVAL_MS`, `INGEST_CONCURRENCY`                | worker      | Poll frequency (default 10 s) and parallel ingestion jobs per worker                                                                                                                                                 |
 | `INGEST_BATCH_SIZE`, `INGEST_BATCH_MAX_LAG_LEDGERS`       | worker      | Caught-up contracts polled per RPC call (default 25, the maximum) and how far behind a contract may be to join a batch                                                                                               |
 | `EVENT_RETENTION_DAYS`                                    | worker      | Prune stored events after N days (0 = keep forever)                                                                                                                                                                  |
+| `AUDIT_LOG_RETENTION_DAYS`                                | worker      | Prune audit log entries after N days (default 365, 0 = keep forever)                                                                                                                                                 |
 | `WEBHOOK_BLOCK_PRIVATE_IPS`                               | worker      | Refuse webhooks to private/loopback addresses. Enable in production.                                                                                                                                                 |
 | `WEBHOOK_TIMEOUT_MS`, `WEBHOOK_MAX_ATTEMPTS`              | worker      | Delivery timeout and retry count                                                                                                                                                                                     |
 | `SMTP_*`                                                  | worker      | Enables email destinations; leave `SMTP_HOST` empty to disable                                                                                                                                                       |
@@ -103,5 +158,6 @@ it delays notifications that were in flight but loses no events or alerts.
 ## Upgrading
 
 1. Pull or build the new images.
-2. Run the `migrate` job (Compose does this automatically on `up`).
+2. Run the `migrate` job (Compose does this automatically on `up`; the Helm chart runs it in
+   each new pod's init container).
 3. Restart API, worker and web. Workers finish in-flight jobs on `SIGTERM`.

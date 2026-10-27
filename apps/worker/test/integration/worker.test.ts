@@ -2,7 +2,12 @@ import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { verifyWebhookSignature } from '@stellar-health/alert-engine';
-import { disconnectPrisma, getPrisma } from '@stellar-health/db';
+import {
+  disconnectPrisma,
+  getPrisma,
+  sealDestinationConfig,
+  type Prisma,
+} from '@stellar-health/db';
 import { resetDatabase } from '../../../../tests/support/test-db';
 import { deliverNotification } from '../../src/delivery';
 import { checkInactivity } from '../../src/inactivity';
@@ -354,6 +359,102 @@ describe('storage TTL and inactivity rules', () => {
   });
 });
 
+describe('WASM upgrade rule', () => {
+  it('alerts once when the WASM hash changes and follows the new code entry', async () => {
+    const oldHash = 'aa'.repeat(32);
+    const newHash = 'bb'.repeat(32);
+    const c = await createContract(50);
+    await prisma.contract.update({
+      where: { id: c.id },
+      data: {
+        executableType: 'wasm',
+        wasmHash: oldHash,
+        storageEntries: {
+          create: [
+            { kind: 'INSTANCE', label: 'Contract instance', ledgerKeyXdr: 'instance-50' },
+            { kind: 'CODE', label: 'Contract code (WASM)', ledgerKeyXdr: 'code-old' },
+          ],
+        },
+      },
+    });
+    const d = await webhookDestination('https://example.com/hook');
+    const rule = await prisma.alertRule.create({
+      data: {
+        name: 'Upgrades',
+        type: 'WASM_CHANGED',
+        severity: 'CRITICAL',
+        config: {},
+        destinations: { connect: [{ id: d.id }] },
+      },
+    });
+    const info = {
+      contractId: c.contractId,
+      executableType: 'wasm' as const,
+      wasmHash: oldHash,
+      instanceLedgerKeyXdr: 'instance-50',
+      codeLedgerKeyXdr: 'code-old',
+      instanceLiveUntilLedger: 5000,
+      codeLiveUntilLedger: 5000,
+      latestLedger: 1000,
+    };
+    h.rpc.contractInfos.set(c.contractId, info);
+
+    // Unchanged hash: nothing happens.
+    await checkStorage(h.deps, c.id);
+    expect(await prisma.alert.count()).toBe(0);
+
+    h.rpc.contractInfos.set(c.contractId, {
+      ...info,
+      wasmHash: newHash,
+      codeLedgerKeyXdr: 'code-new',
+      codeLiveUntilLedger: 9000,
+    });
+    await checkStorage(h.deps, c.id);
+    await checkStorage(h.deps, c.id);
+
+    const alerts = await prisma.alert.findMany();
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toMatchObject({ ruleId: rule.id, severity: 'CRITICAL' });
+    expect(alerts[0]!.title).toContain('WASM upgraded');
+    expect(alerts[0]!.context).toMatchObject({ previousWasmHash: oldHash, newWasmHash: newHash });
+    expect(h.queued).toHaveLength(1);
+
+    const after = await prisma.contract.findUniqueOrThrow({
+      where: { id: c.id },
+      include: { storageEntries: { where: { kind: 'CODE' } } },
+    });
+    expect(after.wasmHash).toBe(newHash);
+    expect(after.storageEntries).toHaveLength(1);
+    expect(after.storageEntries[0]!.ledgerKeyXdr).toBe('code-new');
+  });
+
+  it('records a first-seen hash without alerting', async () => {
+    const c = await createContract(51);
+    await prisma.storageEntry.create({
+      data: { contractRefId: c.id, kind: 'INSTANCE', label: 'i', ledgerKeyXdr: 'instance-51' },
+    });
+    await prisma.alertRule.create({ data: { name: 'U', type: 'WASM_CHANGED', config: {} } });
+    h.rpc.contractInfos.set(c.contractId, {
+      contractId: c.contractId,
+      executableType: 'wasm',
+      wasmHash: 'cc'.repeat(32),
+      instanceLedgerKeyXdr: 'instance-51',
+      codeLedgerKeyXdr: 'code-51',
+      instanceLiveUntilLedger: 5000,
+      codeLiveUntilLedger: 5000,
+      latestLedger: 1000,
+    });
+    await checkStorage(h.deps, c.id);
+    expect(await prisma.alert.count()).toBe(0);
+    const after = await prisma.contract.findUniqueOrThrow({
+      where: { id: c.id },
+      include: { storageEntries: { where: { kind: 'CODE' } } },
+    });
+    expect(after.wasmHash).toBe('cc'.repeat(32));
+    expect(after.storageEntries[0]!.ledgerKeyXdr).toBe('code-51');
+  });
+});
+
 describe('webhook delivery', () => {
   let server: Server;
   let url: string;
@@ -525,6 +626,103 @@ describe('webhook delivery', () => {
   });
 });
 
+describe('chat destinations', () => {
+  let server: Server;
+  let local: string;
+  let respond: number;
+  let received: { url: string; body: string }[];
+
+  beforeAll(async () => {
+    server = createServer((req, res) => {
+      let body = '';
+      req.on('data', (c) => (body += c));
+      req.on('end', () => {
+        received.push({ url: String(req.headers['x-original-url']), body });
+        res.statusCode = respond;
+        res.end(respond >= 400 ? 'nope' : 'ok');
+      });
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    local = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+  afterAll(() => new Promise<void>((r) => server.close(() => r())));
+  beforeEach(() => {
+    respond = 200;
+    received = [];
+    // Chat destinations only accept their provider's host, so route those calls to a local server.
+    h.deps.fetchImpl = (input, init) =>
+      fetch(local, {
+        ...init,
+        headers: { ...(init?.headers as Record<string, string>), 'x-original-url': String(input) },
+      });
+  });
+
+  async function chatDelivery(type: 'SLACK', config: Record<string, unknown>) {
+    const c = await createContract(40);
+    const d = await prisma.notificationDestination.create({
+      data: {
+        name: type,
+        type,
+        config: sealDestinationConfig(h.deps.secrets, config) as Prisma.InputJsonValue,
+      },
+    });
+    const alert = await prisma.alert.create({
+      data: {
+        contractRefId: c.id,
+        severity: 'WARNING',
+        title: 'Low <balance>',
+        message: 'Balance dropped',
+        context: {},
+        deliveries: { create: { destinationId: d.id } },
+      },
+      include: { deliveries: true },
+    });
+    return { delivery: alert.deliveries[0]!, alert, destination: d };
+  }
+
+  it('posts Block Kit messages to Slack with the URL stored encrypted', async () => {
+    const webhookUrl = 'https://hooks.slack.com/services/T000/B000/secret123';
+    const { delivery, alert, destination } = await chatDelivery('SLACK', { webhookUrl });
+    expect(JSON.stringify(destination.config)).not.toContain('hooks.slack.com');
+    await expect(
+      deliverNotification(h.deps, delivery.id, { number: 1, isFinalAttempt: false }),
+    ).resolves.toBe('sent');
+    expect(received).toHaveLength(1);
+    expect(received[0]!.url).toBe(webhookUrl);
+    const body = JSON.parse(received[0]!.body);
+    expect(body.text).toBe('[WARNING] Low &lt;balance&gt;');
+    expect(body.blocks.at(-1).elements[0].url).toContain(`/alerts/history?alert=${alert.id}`);
+  });
+
+  it('retries Slack 5xx and 429 responses but not 4xx', async () => {
+    const { delivery } = await chatDelivery('SLACK', {
+      webhookUrl: 'https://hooks.slack.com/services/T/B/x',
+    });
+    respond = 429;
+    await expect(
+      deliverNotification(h.deps, delivery.id, { number: 1, isFinalAttempt: false }),
+    ).rejects.toThrow(/429/);
+    expect(
+      (await prisma.notificationDelivery.findUniqueOrThrow({ where: { id: delivery.id } })).status,
+    ).toBe('PENDING');
+    respond = 404;
+    await expect(
+      deliverNotification(h.deps, delivery.id, { number: 2, isFinalAttempt: false }),
+    ).rejects.toThrow(/404/);
+    expect(
+      (await prisma.notificationDelivery.findUniqueOrThrow({ where: { id: delivery.id } })).status,
+    ).toBe('FAILED');
+  });
+
+  it('rejects a stored Slack URL on another host', async () => {
+    const { delivery } = await chatDelivery('SLACK', { webhookUrl: 'https://evil.example.com/x' });
+    await expect(
+      deliverNotification(h.deps, delivery.id, { number: 1, isFinalAttempt: false }),
+    ).rejects.toThrow(/Invalid Slack configuration/);
+    expect(received).toHaveLength(0);
+  });
+});
+
 describe('maintenance', () => {
   it('prunes events past the retention period', async () => {
     const c = await createContract(40);
@@ -544,7 +742,40 @@ describe('maintenance', () => {
         { ...base, eventId: 'new', ledger: 2, ledgerClosedAt: new Date() },
       ],
     });
-    expect(await pruneOldData(h.deps)).toEqual({ deleted: 1 });
+    expect(await pruneOldData(h.deps)).toEqual({ deleted: 1, auditDeleted: 0 });
     expect((await prisma.event.findMany()).map((e) => e.eventId)).toEqual(['new']);
+  });
+
+  async function seedAuditLog(oldRows: number) {
+    const row = (createdAt: Date, i: number) => ({
+      createdAt,
+      actorType: 'admin',
+      actorId: 'admin',
+      actorName: 'Admin',
+      method: 'POST',
+      route: '/contracts',
+      path: `/contracts/${i}`,
+      statusCode: 201,
+    });
+    await prisma.auditLog.createMany({
+      data: [
+        ...Array.from({ length: oldRows }, (_, i) => row(past(400 * 86400_000), i)),
+        row(past(10 * 86400_000), 999),
+      ],
+    });
+  }
+
+  it('prunes audit log rows past their retention in batches', async () => {
+    await seedAuditLog(7);
+    // Batches of 3: 3 + 3 + 1 rows.
+    expect(await pruneOldData(h.deps, 3)).toMatchObject({ auditDeleted: 7 });
+    expect((await prisma.auditLog.findMany()).map((r) => r.path)).toEqual(['/contracts/999']);
+  });
+
+  it('keeps the audit log forever when the retention is 0', async () => {
+    h = createHarness({ AUDIT_LOG_RETENTION_DAYS: '0' });
+    await seedAuditLog(2);
+    expect(await pruneOldData(h.deps)).toMatchObject({ auditDeleted: 0 });
+    expect(await prisma.auditLog.count()).toBe(3);
   });
 });

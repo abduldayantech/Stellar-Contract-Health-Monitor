@@ -20,6 +20,7 @@ import {
   shortId,
   timeAgo,
 } from '@stellar-health/ui';
+import { AlertActionForm, type AlertAction } from '@/components/alert-action-form';
 import { PageHeader } from '@/components/app-shell';
 import { api, errorMessage, qs, useApi } from '@/lib/api';
 import type { AlertItem, Contract, Delivery, Page } from '@/lib/types';
@@ -34,6 +35,7 @@ function HistoryPage() {
   const focus = params.get('alert');
   const [expanded, setExpanded] = useState<string | null>(focus);
   const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState<{ id: string; action: AlertAction } | null>(null);
 
   useEffect(() => {
     if (focus) {
@@ -45,7 +47,7 @@ function HistoryPage() {
     }
   }, [focus]);
 
-  const contracts = useApi<Page<Contract>>('/contracts');
+  const contracts = useApi<Page<Contract>>('/contracts?limit=500');
   const summary = useApi<{ byStatus: Record<string, number>; failedDeliveries: number }>(
     '/alerts/summary',
     { refreshInterval: 15_000 },
@@ -212,9 +214,8 @@ function HistoryPage() {
                         <Button
                           size="sm"
                           variant="secondary"
-                          onClick={() =>
-                            act(() => api(`/alerts/${a.id}/acknowledge`, { method: 'POST' }))
-                          }
+                          aria-expanded={pending?.id === a.id && pending.action === 'acknowledge'}
+                          onClick={() => setPending({ id: a.id, action: 'acknowledge' })}
                         >
                           Acknowledge
                         </Button>
@@ -223,15 +224,31 @@ function HistoryPage() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() =>
-                            act(() => api(`/alerts/${a.id}/resolve`, { method: 'POST' }))
-                          }
+                          aria-expanded={pending?.id === a.id && pending.action === 'resolve'}
+                          onClick={() => setPending({ id: a.id, action: 'resolve' })}
                         >
                           Resolve
                         </Button>
                       )}
                     </div>
                   </div>
+                  {pending?.id === a.id && (
+                    <AlertActionForm
+                      key={pending.action}
+                      alertId={a.id}
+                      action={pending.action}
+                      onCancel={() => setPending(null)}
+                      onSubmit={(note) =>
+                        act(async () => {
+                          await api(`/alerts/${a.id}/${pending.action}`, {
+                            method: 'POST',
+                            body: note ? { note } : {},
+                          });
+                          setPending(null);
+                        })
+                      }
+                    />
+                  )}
                   {open && (
                     <AlertDetails
                       alert={a}
@@ -278,7 +295,10 @@ function AlertDetails({ alert, onRetry }: { alert: AlertItem; onRetry: (d: Deliv
         {alert.resolvedAt && (
           <div>
             <dt className="text-slate-500">Resolved</dt>
-            <dd>{formatDateTime(alert.resolvedAt)}</dd>
+            <dd>
+              {formatDateTime(alert.resolvedAt)}{' '}
+              {alert.resolvedBy ? `by ${alert.resolvedBy}` : '(condition cleared)'}
+            </dd>
           </div>
         )}
         {alert.contract && (
@@ -295,6 +315,20 @@ function AlertDetails({ alert, onRetry }: { alert: AlertItem; onRetry: (d: Deliv
           </div>
         )}
       </dl>
+      {(alert.acknowledgeNote || alert.resolveNote) && (
+        <ul className="space-y-1.5" aria-label="Notes">
+          {alert.acknowledgeNote && (
+            <AlertNote
+              who={alert.acknowledgedBy}
+              verb="acknowledged"
+              text={alert.acknowledgeNote}
+            />
+          )}
+          {alert.resolveNote && (
+            <AlertNote who={alert.resolvedBy} verb="resolved" text={alert.resolveNote} />
+          )}
+        </ul>
+      )}
       <div>
         <p className="mb-1 text-xs font-medium text-slate-500">Notifications</p>
         {alert.deliveries.length === 0 ? (
@@ -339,6 +373,17 @@ function AlertDetails({ alert, onRetry }: { alert: AlertItem; onRetry: (d: Deliv
         </pre>
       </details>
     </div>
+  );
+}
+
+function AlertNote({ who, verb, text }: { who?: string | null; verb: string; text: string }) {
+  return (
+    <li className="rounded-md bg-white px-3 py-2 text-xs ring-1 ring-slate-200 dark:bg-slate-950 dark:ring-slate-800">
+      <p className="mb-0.5 text-slate-500">
+        {who ?? 'Someone'} {verb}:
+      </p>
+      <p className="whitespace-pre-line text-slate-800 dark:text-slate-200">{text}</p>
+    </li>
   );
 }
 

@@ -103,6 +103,8 @@ export function RuleForm({
         return { ledgersThreshold: Math.max(1, Math.round(Number(ttlDays) * LEDGERS_PER_DAY)) };
       case 'INACTIVITY':
         return { windowSeconds: Math.max(60, Math.round(Number(idleHours) * 3600)) };
+      case 'WASM_CHANGED':
+        return {};
     }
   }
 
@@ -312,6 +314,13 @@ export function RuleForm({
                 the contract page. Already-expired entries escalate to critical.
               </p>
             </div>
+          )}
+          {type === 'WASM_CHANGED' && (
+            <p className="text-xs text-slate-500">
+              Checked with every storage TTL check (every few minutes). Triggers once per upgrade,
+              with the old and new WASM hashes. Set the severity to critical if upgrades should page
+              someone.
+            </p>
           )}
           {type === 'INACTIVITY' && (
             <div className="grid gap-4 sm:grid-cols-3">

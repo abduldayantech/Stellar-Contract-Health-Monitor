@@ -72,6 +72,24 @@ jobs:
             test-results
           retention-days: 7
 
+  helm:
+    name: Helm chart
+    runs-on: ubuntu-latest
+    env:
+      CHART: deploy/helm/stellar-health
+      TEST_VALUES: --set secrets.adminApiToken=ci-admin-token-0123456789abcdef --set secrets.encryptionKey=Y2ktZW5jcnlwdGlvbi1rZXktMzItYnl0ZXMtbG9uZyE=
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+      - run: helm lint --strict $CHART $TEST_VALUES
+      - name: Render default, external-services and autoscaling/ingress variants
+        run: |
+          helm template ci $CHART $TEST_VALUES > /dev/null
+          helm template ci $CHART --set existingSecret=app --set postgresql.enabled=false --set redis.enabled=false > /dev/null
+          helm template ci $CHART $TEST_VALUES --set api.autoscaling.enabled=true --set ingress.enabled=true > /dev/null
+
   docker:
     name: Build and scan images
     runs-on: ubuntu-latest

@@ -1,6 +1,9 @@
 @import 'tailwindcss';
 @source '../../../../packages/ui/src';
 
+/* Dark mode follows the `dark` class on <html>, set from the theme switcher (System by default). */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   color-scheme: light dark;
 }

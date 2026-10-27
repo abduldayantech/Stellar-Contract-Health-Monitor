@@ -27,6 +27,11 @@ Every named token has a role (default `VIEWER`):
 The bootstrap token is always `ADMIN`. Requests without the needed role get `403 FORBIDDEN`.
 Give each person and integration its own token so the audit log shows who did what.
 
+Named tokens can expire: pass `"expiresInDays": 1-3650` when creating one (omit it, or send
+`null`, for a token that never expires). Expired tokens get `401 TOKEN_EXPIRED` ("Token
+expired"). The dashboard defaults new tokens to 90 days and highlights tokens that expire
+within a week.
+
 ### Audit log
 
 Every state-changing request (`POST`, `PUT`, `PATCH`, `DELETE`) is recorded with the token name,
@@ -48,7 +53,7 @@ never stored. Read it with `GET /audit-log` (admins only) or in **Settings → A
 | Status | Codes                                                                                           |
 | ------ | ----------------------------------------------------------------------------------------------- |
 | 400    | `VALIDATION_ERROR`, `INVALID_CONTRACT_ID`, `INVALID_JSON`, `INVALID_DESTINATION`, `INVALID_KEY` |
-| 401    | `UNAUTHORIZED`                                                                                  |
+| 401    | `UNAUTHORIZED`, `TOKEN_EXPIRED`                                                                 |
 | 403    | `FORBIDDEN` – the token's role does not allow this                                              |
 | 404    | `NOT_FOUND`                                                                                     |
 | 409    | `ALREADY_REGISTERED`, `INVALID_STATE`, `CONFLICT`                                               |
@@ -59,7 +64,8 @@ never stored. Read it with `GET /audit-log` (admins only) or in **Settings → A
 ## Pagination
 
 List endpoints for events and alerts return `{ "items": [...], "nextCursor": "..." | null }`.
-Pass `cursor=<nextCursor>` to get the next page; `limit` is 1–200 (default 50).
+Pass `cursor=<nextCursor>` to get the next page; `limit` is 1–200 (default 50), except
+`GET /contracts`, where it is 1–500 (default 100).
 
 ## Endpoints
 
@@ -79,7 +85,7 @@ Pass `cursor=<nextCursor>` to get the next page; `limit` is 1–200 (default 50)
 | ------ | ----------------------------------------- | ------------------------------------------------------------------------------------- |
 | POST   | `/contracts/validate`                     | `{contractId, network}` – checks format and that the contract exists on chain         |
 | POST   | `/contracts`                              | `{contractId, network, label?, lookbackLedgers?}` – register and start monitoring     |
-| GET    | `/contracts`                              | `?network&status&search`                                                              |
+| GET    | `/contracts`                              | `?network&status&search&limit&cursor` – newest first; `limit` 1–500, default **100**  |
 | GET    | `/contracts/:id`                          | Details, storage entries with TTLs, rules, recent alerts                              |
 | GET    | `/contracts/:id/activity`                 | `?hours=24` – event counts per hour (per day above 72 h)                              |
 | PATCH  | `/contracts/:id`                          | `{label?, status?: ACTIVE\|PAUSED}`                                                   |
@@ -88,25 +94,31 @@ Pass `cursor=<nextCursor>` to get the next page; `limit` is 1–200 (default 50)
 | POST   | `/contracts/:id/storage-entries`          | `{label, durability: PERSISTENT\|TEMPORARY, keyType: symbol\|enum_variant\|xdr, key}` |
 | DELETE | `/contracts/:id/storage-entries/:entryId` | Stop monitoring a storage key                                                         |
 
+Each storage entry in `GET /contracts/:id` has an `extend` field describing how to pass it to
+`stellar contract extend`: `{kind: "instance"}`, `{kind: "code", wasmHash}` or
+`{kind: "data", durability, key: {symbol} | {xdr}}`. The dashboard turns it into a copyable
+command, and TTL alerts include the same command for entries that are still live.
+
 ### Events
 
-| Method | Path             | Description                                                                               |
-| ------ | ---------------- | ----------------------------------------------------------------------------------------- |
-| GET    | `/events`        | `?contractRefId&contractId&network&topic&txHash&type&from&to&limit&cursor` – newest first |
-| GET    | `/events/topics` | `?contractRefId` – most common first topics                                               |
-| GET    | `/events/:id`    | One event with decoded value and raw XDR                                                  |
+| Method | Path             | Description                                                                                 |
+| ------ | ---------------- | ------------------------------------------------------------------------------------------- |
+| GET    | `/events`        | `?contractRefId&contractId&network&topic&txHash&type&from&to&limit&cursor` – newest first   |
+| GET    | `/events/export` | Same filters plus `format=csv\|ndjson`; streams up to 100,000 matching events as a download |
+| GET    | `/events/topics` | `?contractRefId` – most common first topics                                                 |
+| GET    | `/events/:id`    | One event with decoded value and raw XDR                                                    |
 
 ### Alert rules and destinations
 
-| Method               | Path                              | Description                                                            |
-| -------------------- | --------------------------------- | ---------------------------------------------------------------------- |
-| GET / POST           | `/alert-rules`                    | List (`?contractRefId`) / create                                       |
-| GET / PATCH / DELETE | `/alert-rules/:id`                | Read / update / delete                                                 |
-| GET / POST           | `/destinations`                   | List with 7-day delivery stats / create (webhook secret returned once) |
-| PATCH / DELETE       | `/destinations/:id`               | Update / delete                                                        |
-| POST                 | `/destinations/:id/rotate-secret` | New webhook secret (returned once)                                     |
-| POST                 | `/destinations/:id/test`          | Queue a test notification                                              |
-| GET                  | `/destinations/:id/deliveries`    | Last 50 deliveries                                                     |
+| Method               | Path                              | Description                                                                                                           |
+| -------------------- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| GET / POST           | `/alert-rules`                    | List (`?contractRefId`) / create                                                                                      |
+| GET / PATCH / DELETE | `/alert-rules/:id`                | Read / update / delete                                                                                                |
+| GET / POST           | `/destinations`                   | List with 7-day delivery stats / create (webhook secret returned once); types in [notifications.md](notifications.md) |
+| PATCH / DELETE       | `/destinations/:id`               | Update / delete                                                                                                       |
+| POST                 | `/destinations/:id/rotate-secret` | New webhook secret (returned once)                                                                                    |
+| POST                 | `/destinations/:id/test`          | Queue a test notification                                                                                             |
+| GET                  | `/destinations/:id/deliveries`    | Last 50 deliveries                                                                                                    |
 
 Rule body:
 
@@ -122,32 +134,19 @@ Rule body:
 }
 ```
 
-`EVENT_MATCH` can also compare a number in the event value with `valueCondition`:
-
-```json
-{
-  "topics": ["transfer"],
-  "valueCondition": { "path": "amount", "op": "gte", "value": "10000000000000" }
-}
-```
-
-`path` is dot-separated (`""` for a plain number, `amount`, `0`, `data.amount`); `op` is one of
-`gt`, `gte`, `lt`, `lte`, `eq`; `value` is a whole number as a string. Values are compared as
-big integers, so i128 token amounts (in the token's smallest unit) are exact. Events whose value
-at `path` isn't an integer don't match.
-
-`TTL_EXPIRY` config: `{ "ledgersThreshold": 120960 }`. `INACTIVITY` config: `{ "windowSeconds": 86400 }`.
+`TTL_EXPIRY` config: `{ "ledgersThreshold": 120960 }`. `INACTIVITY` config: `{ "windowSeconds": 86400 }`. `WASM_CHANGED` takes no config
+(`{}` or omit it).
 
 ### Alerts
 
-| Method | Path                      | Description                                                  |
-| ------ | ------------------------- | ------------------------------------------------------------ |
-| GET    | `/alerts`                 | `?status&contractRefId&ruleId&deliveryStatus&limit&cursor`   |
-| GET    | `/alerts/summary`         | Counts by status and failed deliveries                       |
-| GET    | `/alerts/:id`             | One alert with its deliveries                                |
-| POST   | `/alerts/:id/acknowledge` | `TRIGGERED` → `ACKNOWLEDGED`                                 |
-| POST   | `/alerts/:id/resolve`     | Resolve (level rules can fire again if the condition recurs) |
-| POST   | `/deliveries/:id/retry`   | Retry a failed delivery                                      |
+| Method | Path                      | Description                                                                          |
+| ------ | ------------------------- | ------------------------------------------------------------------------------------ |
+| GET    | `/alerts`                 | `?status&contractRefId&ruleId&deliveryStatus&limit&cursor`                           |
+| GET    | `/alerts/summary`         | Counts by status and failed deliveries                                               |
+| GET    | `/alerts/:id`             | One alert with its deliveries                                                        |
+| POST   | `/alerts/:id/acknowledge` | `TRIGGERED` → `ACKNOWLEDGED`; optional body `{note}` (max 1000 chars)                |
+| POST   | `/alerts/:id/resolve`     | Resolve (level rules can fire again if the condition recurs); optional body `{note}` |
+| POST   | `/deliveries/:id/retry`   | Retry a failed delivery                                                              |
 
 ### Settings
 
