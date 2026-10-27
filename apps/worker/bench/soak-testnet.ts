@@ -136,7 +136,8 @@ async function main() {
   await redis.quit();
 
   // ---- Webhook receiver: counts deliveries and checks signatures ----
-  const webhooks = { received: 0, badSignature: 0, byEvent: {} as Record<string, number> };
+  const webhooks = { received: 0, badSignature: 0 };
+  const webhookTypes = new Map<string, number>();
   const receiver = createServer((req: IncomingMessage, res) => {
     let body = '';
     req.on('data', (c) => (body += c));
@@ -148,7 +149,7 @@ async function main() {
       if (req.headers['x-schm-signature'] !== expected) webhooks.badSignature++;
       try {
         const kind = (JSON.parse(body) as { type?: string }).type ?? 'unknown';
-        webhooks.byEvent[kind] = (webhooks.byEvent[kind] ?? 0) + 1;
+        webhookTypes.set(kind, (webhookTypes.get(kind) ?? 0) + 1);
       } catch {
         /* counted above */
       }
@@ -371,7 +372,7 @@ async function main() {
     rpcCalls: last.rpcCalls,
     gaps: last.gaps,
     alerts: last.alertsTotal,
-    webhooks,
+    webhooks: { ...webhooks, byType: Object.fromEntries(webhookTypes) },
     deliveries: Object.fromEntries(deliveries.map((d) => [d.status, d._count])),
     statusMsMax: max('statusMs'),
     listMsMax: max('listMs'),

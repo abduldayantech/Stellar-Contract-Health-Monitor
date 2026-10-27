@@ -68,7 +68,8 @@ class RpcFault extends Error {
 export async function startMockRpc(options: Partial<MockRpcOptions> = {}) {
   const opts = { ...DEFAULTS, ...options };
   const startedAt = Date.now();
-  const stats: MockRpcStats = { calls: {}, contractsRequested: 0, eventsServed: 0, errors: 0 };
+  const calls = new Map<string, number>();
+  const stats = { contractsRequested: 0, eventsServed: 0, errors: 0 };
 
   const latestLedger = () =>
     opts.firstLedger + Math.floor((Date.now() - startedAt) / opts.ledgerMs);
@@ -177,7 +178,7 @@ export async function startMockRpc(options: Partial<MockRpcOptions> = {}) {
       try {
         msg = JSON.parse(body);
         const method = msg.method ?? '';
-        stats.calls[method] = (stats.calls[method] ?? 0) + 1;
+        calls.set(method, (calls.get(method) ?? 0) + 1);
         reply = { jsonrpc: '2.0', id: msg.id, result: handle(method, msg.params) };
       } catch (err) {
         stats.errors++;
@@ -198,7 +199,7 @@ export async function startMockRpc(options: Partial<MockRpcOptions> = {}) {
     options: opts,
     latestLedger,
     /** A copy of the counters, for diffing between two points in time. */
-    stats: (): MockRpcStats => ({ ...stats, calls: { ...stats.calls } }),
+    stats: (): MockRpcStats => ({ ...stats, calls: Object.fromEntries(calls) }),
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
 }
