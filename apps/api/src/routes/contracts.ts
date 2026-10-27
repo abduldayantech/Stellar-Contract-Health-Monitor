@@ -15,6 +15,7 @@ import {
   validateContractId,
 } from '@stellar-health/stellar-client';
 import { HttpError, notFound } from '../lib/errors';
+import { toPage } from '../lib/pagination';
 import {
   serializeAlert,
   serializeContract,
@@ -145,9 +146,11 @@ export async function contractRoutes(app: FastifyInstance, deps: AppDeps) {
         network: z.enum(['TESTNET', 'MAINNET', 'FUTURENET', 'LOCAL']).optional(),
         status: z.enum(['ACTIVE', 'PAUSED', 'ERROR']).optional(),
         search: z.string().max(120).optional(),
+        limit: z.coerce.number().int().min(1).max(500).default(100),
+        cursor: z.string().optional(),
       })
       .parse(req.query);
-    const contracts = await prisma.contract.findMany({
+    const rows = await prisma.contract.findMany({
       where: {
         network: q.network,
         status: q.status,
@@ -160,9 +163,12 @@ export async function contractRoutes(app: FastifyInstance, deps: AppDeps) {
             }
           : {}),
       },
-      orderBy: { createdAt: 'desc' },
-      take: 500,
+      // id breaks ties so every contract appears exactly once across pages.
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: q.limit + 1,
+      ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}),
     });
+    const { items: contracts, nextCursor } = toPage(rows, q.limit);
     const ids = contracts.map((c) => c.id);
     const [alertCounts, expiries, ledgers] = await Promise.all([
       prisma.alert.groupBy({
@@ -189,6 +195,7 @@ export async function contractRoutes(app: FastifyInstance, deps: AppDeps) {
           nearestExpiryLedgers: latest && minLive ? minLive - latest : null,
         });
       }),
+      nextCursor,
     };
   });
 
@@ -215,7 +222,7 @@ export async function contractRoutes(app: FastifyInstance, deps: AppDeps) {
       }),
     ]);
     const latest = ledgers.get(c.network as Network) ?? null;
-    const entries = c.storageEntries.map((s) => serializeStorageEntry(s, latest));
+    const entries = c.storageEntries.map((s) => serializeStorageEntry(s, latest, c.wasmHash));
     const remaining = entries.map((e) => e.ledgersRemaining).filter((r): r is number => r !== null);
     return {
       ...serializeContract(c, {

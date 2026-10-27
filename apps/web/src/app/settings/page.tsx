@@ -22,6 +22,7 @@ import {
 import { PageHeader } from '@/components/app-shell';
 import { CopyButton } from '@/components/copy-button';
 import { api, errorMessage, useApi, useMe, type Role } from '@/lib/api';
+import { EXPIRY_OPTIONS, tokenExpiry } from '@/lib/token-expiry';
 import type { Destination, Network, Page, Status } from '@/lib/types';
 
 interface NetworkSetting {
@@ -46,6 +47,7 @@ interface Token {
   createdAt: string;
   lastUsedAt: string | null;
   revokedAt: string | null;
+  expiresAt: string | null;
 }
 
 interface AuditEntry {
@@ -308,6 +310,7 @@ function ApiTokens() {
   const { data, mutate } = useApi<Page<Token>>('/settings/tokens');
   const [name, setName] = useState('');
   const [role, setRole] = useState<Role>('VIEWER');
+  const [expiresIn, setExpiresIn] = useState<string>('90');
   const [created, setCreated] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -319,7 +322,7 @@ function ApiTokens() {
     try {
       const r = await api<{ token: string }>('/settings/tokens', {
         method: 'POST',
-        body: { name, role },
+        body: { name, role, expiresInDays: expiresIn ? Number(expiresIn) : null },
       });
       setCreated(r.token);
       setName('');
@@ -367,6 +370,21 @@ function ApiTokens() {
             </Select>
           </Field>
         </div>
+        <div className="w-36">
+          <Field label="Expires" htmlFor="token-expiry">
+            <Select
+              id="token-expiry"
+              value={expiresIn}
+              onChange={(e) => setExpiresIn(e.target.value)}
+            >
+              {EXPIRY_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
         <Button type="submit" loading={saving}>
           Create token
         </Button>
@@ -400,6 +418,7 @@ function ApiTokens() {
               <Th>Token</Th>
               <Th>Created</Th>
               <Th>Last used</Th>
+              <Th>Expires</Th>
               <Th />
             </tr>
           </thead>
@@ -417,6 +436,9 @@ function ApiTokens() {
                 </Td>
                 <Td>{timeAgo(t.createdAt)}</Td>
                 <Td>{timeAgo(t.lastUsedAt)}</Td>
+                <Td>
+                  <TokenExpiryBadge token={t} />
+                </Td>
                 <Td>
                   {t.revokedAt ? (
                     <Badge tone="slate">revoked</Badge>
@@ -444,6 +466,19 @@ function ApiTokens() {
         </Table>
       )}
     </Card>
+  );
+}
+
+function TokenExpiryBadge({ token }: { token: Token }) {
+  if (token.revokedAt) return <span className="text-slate-400">—</span>;
+  const e = tokenExpiry(token.expiresAt);
+  const title = token.expiresAt ? new Date(token.expiresAt).toLocaleString() : undefined;
+  return e.soon ? (
+    <Badge tone={e.tone}>
+      <span title={title}>{e.label}</span>
+    </Badge>
+  ) : (
+    <span title={title}>{e.label}</span>
   );
 }
 

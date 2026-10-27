@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { disconnectPrisma } from '@stellar-health/db';
 import { resetDatabase } from '../../../../tests/support/test-db';
 import { ADMIN_TOKEN, auth, contractId, createTestApp, type TestContext } from './helpers';
@@ -71,6 +71,30 @@ describe('status and auth', () => {
     expect(res.body).toContain('schm_http_request_duration_seconds');
   });
 
+  it('returns a request ID on every response and in error bodies', async () => {
+    const ok = await ctx.app.inject({ url: '/health', headers: { 'x-request-id': 'trace-42' } });
+    expect(ok.headers['x-request-id']).toBe('trace-42');
+
+    const generated = await ctx.app.inject({ url: '/health' });
+    expect(generated.headers['x-request-id']).toMatch(/^[0-9a-f-]{36}$/);
+
+    const unsafe = await ctx.app.inject({
+      url: '/contracts',
+      headers: { 'x-request-id': 'no spaces allowed' },
+    });
+    expect(unsafe.statusCode).toBe(401);
+    const id = unsafe.headers['x-request-id'];
+    expect(id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(unsafe.json().error.requestId).toBe(id);
+
+    const missing = await ctx.app.inject({
+      url: '/nope',
+      headers: { ...auth, 'x-request-id': 'r-1' },
+    });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json().error).toMatchObject({ code: 'NOT_FOUND', requestId: 'r-1' });
+  });
+
   it('rejects requests without a valid token', async () => {
     expect((await ctx.app.inject({ url: '/contracts' })).statusCode).toBe(401);
     const bad = await ctx.app.inject({
@@ -118,6 +142,48 @@ describe('status and auth', () => {
       (await ctx.app.inject({ url: '/auth/me', headers: { authorization: `Bearer ${token}` } }))
         .statusCode,
     ).toBe(401);
+  });
+
+  it('rejects tokens past their expiry date', async () => {
+    const created = await ctx.app.inject({
+      method: 'POST',
+      url: '/settings/tokens',
+      headers: auth,
+      payload: { name: 'Contractor', role: 'VIEWER', expiresInDays: 7 },
+    });
+    expect(created.statusCode).toBe(201);
+    const { token, id, expiresAt } = created.json();
+    const days = (new Date(expiresAt).getTime() - Date.now()) / 86400_000;
+    expect(days).toBeGreaterThan(6.9);
+    expect(days).toBeLessThanOrEqual(7);
+    const bearer = { authorization: `Bearer ${token}` };
+    expect((await ctx.app.inject({ url: '/auth/me', headers: bearer })).statusCode).toBe(200);
+
+    await ctx.prisma.apiToken.update({
+      where: { id },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+    const expired = await ctx.app.inject({ url: '/auth/me', headers: bearer });
+    expect(expired.statusCode).toBe(401);
+    expect(expired.json().error).toMatchObject({ code: 'TOKEN_EXPIRED', message: 'Token expired' });
+
+    const list = (await ctx.app.inject({ url: '/settings/tokens', headers: auth })).json();
+    expect(list.items.find((t: { id: string }) => t.id === id).expiresAt).toBeTruthy();
+
+    const neverExpires = await ctx.app.inject({
+      method: 'POST',
+      url: '/settings/tokens',
+      headers: auth,
+      payload: { name: 'Forever', role: 'VIEWER' },
+    });
+    expect(neverExpires.json().expiresAt).toBeNull();
+    const tooLong = await ctx.app.inject({
+      method: 'POST',
+      url: '/settings/tokens',
+      headers: auth,
+      payload: { name: 'x', expiresInDays: 0 },
+    });
+    expect(tooLong.statusCode).toBe(400);
   });
 
   it('accepts empty JSON bodies on action endpoints and rejects malformed JSON', async () => {
@@ -233,15 +299,18 @@ describe('roles and audit log', () => {
     await ctx.app.inject({ method: 'DELETE', url: `/contracts/${c.id}`, headers: viewer });
     await ctx.app.inject({ url: '/contracts', headers: auth }); // reads are not audited
 
-    const log = (await ctx.app.inject({ url: '/audit-log?limit=10', headers: auth })).json();
-    const rows = log.items.map(
-      (r: { method: string; route: string; statusCode: number; actorName: string }) =>
-        [r.method, r.route, r.statusCode, r.actorName].join(' '),
-    );
-    expect(rows[0]).toBe('DELETE /contracts/:id 403 VIEWER token');
-    expect(rows[1]).toBe('PATCH /contracts/:id 200 Admin (bootstrap token)');
-    expect(rows.some((r: string) => r.startsWith('GET'))).toBe(false);
-    expect(log.items[0].path).toBe(`/contracts/${c.id}`);
+    // Audit rows are written after the response is sent, so wait for them to land.
+    await vi.waitFor(async () => {
+      const log = (await ctx.app.inject({ url: '/audit-log?limit=10', headers: auth })).json();
+      const rows = log.items.map(
+        (r: { method: string; route: string; statusCode: number; actorName: string }) =>
+          [r.method, r.route, r.statusCode, r.actorName].join(' '),
+      );
+      expect(rows[0]).toBe('DELETE /contracts/:id 403 VIEWER token');
+      expect(rows[1]).toBe('PATCH /contracts/:id 200 Admin (bootstrap token)');
+      expect(rows.some((r: string) => r.startsWith('GET'))).toBe(false);
+      expect(log.items[0].path).toBe(`/contracts/${c.id}`);
+    });
   });
 });
 
@@ -296,6 +365,8 @@ describe('contract registry', () => {
       'INSTANCE',
       'CODE',
     ]);
+    expect(detail.storageEntries[0].extend).toEqual({ kind: 'instance' });
+    expect(detail.storageEntries[1].extend).toEqual({ kind: 'code', wasmHash: 'ab'.repeat(32) });
     expect(detail.nearestExpiryLedgers).toBe(50_000);
     expect(detail.health).toBe('pending');
 
@@ -319,6 +390,43 @@ describe('contract registry', () => {
       payload: { contractId: id, network: 'TESTNET', lookbackLedgers: 1_000_000 },
     });
     expect(res.json().startLedger).toBe(80_001);
+  });
+
+  it('pages through contracts with a cursor, returning each exactly once', async () => {
+    const createdAt = new Date('2026-01-01T00:00:00Z');
+    // Same createdAt for all rows, so ordering must fall back to the id tiebreaker.
+    await ctx.prisma.contract.createMany({
+      data: Array.from({ length: 23 }, (_, i) => ({
+        contractId: contractId(100 + i),
+        network: 'TESTNET' as const,
+        startLedger: 1,
+        createdAt,
+      })),
+    });
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    let pages = 0;
+    do {
+      const res = await ctx.app.inject({
+        url: `/contracts?limit=10${cursor ? `&cursor=${cursor}` : ''}`,
+        headers: auth,
+      });
+      expect(res.statusCode).toBe(200);
+      const page = res.json() as { items: { id: string }[]; nextCursor: string | null };
+      seen.push(...page.items.map((c) => c.id));
+      cursor = page.nextCursor;
+      pages++;
+    } while (cursor);
+    expect(pages).toBe(3);
+    expect(seen).toHaveLength(23);
+    expect(new Set(seen).size).toBe(23);
+
+    const defaults = (await ctx.app.inject({ url: '/contracts', headers: auth })).json();
+    expect(defaults.items).toHaveLength(23);
+    expect(defaults.nextCursor).toBeNull();
+    expect((await ctx.app.inject({ url: '/contracts?limit=501', headers: auth })).statusCode).toBe(
+      400,
+    );
   });
 
   it('lists, searches, pauses and deletes contracts', async () => {
@@ -451,6 +559,53 @@ describe('events', () => {
     ]);
   });
 
+  it('exports filtered events as CSV and NDJSON, including for viewers', async () => {
+    const c = await register(14);
+    await seedEvents(c.id, 6, { topic: 'transfer' });
+    const other = await register(15);
+    await seedEvents(other.id, 3, { topic: 'mint', startLedger: 95_000 });
+    await ctx.prisma.event.updateMany({
+      where: { contractRefId: c.id, ledger: 90_000 },
+      data: { topics: ['transfer', 'a,"quoted"\nvalue'] },
+    });
+    const viewer = await ctx.app.inject({
+      method: 'POST',
+      url: '/settings/tokens',
+      headers: auth,
+      payload: { name: 'viewer', role: 'VIEWER' },
+    });
+    const asViewer = { authorization: `Bearer ${viewer.json().token}` };
+
+    const csv = await ctx.app.inject({
+      url: `/events/export?format=csv&contractRefId=${c.id}`,
+      headers: asViewer,
+    });
+    expect(csv.statusCode).toBe(200);
+    expect(csv.headers['content-type']).toContain('text/csv');
+    expect(csv.headers['content-disposition']).toMatch(/attachment; filename="events-.*\.csv"/);
+    const lines = csv.body.trimEnd().split('\r\n');
+    expect(lines[0]).toBe('ledger,ledgerClosedAt,contractId,txHash,type,eventId,topics,value');
+    expect(lines).toHaveLength(7);
+    expect(lines[1]!.startsWith('90005,')).toBe(true);
+    expect(csv.body).toContain('"transfer / a,""quoted""\nvalue"');
+
+    const ndjson = await ctx.app.inject({
+      url: '/events/export?format=ndjson&topic=mint',
+      headers: auth,
+    });
+    expect(ndjson.headers['content-type']).toContain('application/x-ndjson');
+    const rows = ndjson.body
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l));
+    expect(rows).toHaveLength(3);
+    expect(rows.every((r: { topics: string[] }) => r.topics[0] === 'mint')).toBe(true);
+    expect(rows[0]).toMatchObject({ contractId: other.contractId, ledger: 95_002 });
+
+    const bad = await ctx.app.inject({ url: '/events/export?format=xml', headers: auth });
+    expect(bad.statusCode).toBe(400);
+  });
+
   it('returns hourly activity for a contract', async () => {
     const c = await register(13);
     await seedEvents(c.id, 6);
@@ -463,6 +618,37 @@ describe('events', () => {
 });
 
 describe('alert rules, destinations and alert history', () => {
+  it('creates Slack destinations with the URL encrypted and masked', async () => {
+    const webhookUrl = 'https://hooks.slack.com/services/T000/B000/abcdefghij';
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/destinations',
+      headers: auth,
+      payload: { type: 'SLACK', name: 'Ops channel', config: { webhookUrl } },
+    });
+    expect(res.statusCode).toBe(201);
+    const d = res.json();
+    expect(d.config).toEqual({ webhookUrl: 'https://hooks.slack.com/…ghij' });
+    const row = await ctx.prisma.notificationDestination.findUniqueOrThrow({ where: { id: d.id } });
+    expect(JSON.stringify(row.config)).not.toContain('hooks.slack.com');
+
+    const moved = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/destinations/${d.id}`,
+      headers: auth,
+      payload: { config: { webhookUrl: 'https://example.com/x' } },
+    });
+    expect(moved.statusCode).toBe(400);
+
+    const bad = await ctx.app.inject({
+      method: 'POST',
+      url: '/destinations',
+      headers: auth,
+      payload: { type: 'SLACK', name: 'x', config: { webhookUrl: 'https://example.com/hook' } },
+    });
+    expect(bad.statusCode).toBe(400);
+  });
+
   async function webhook() {
     const res = await ctx.app.inject({
       method: 'POST',
@@ -578,6 +764,19 @@ describe('alert rules, destinations and alert history', () => {
     expect(rule).toMatchObject({ type: 'EVENT_MATCH', severity: 'WARNING', cooldownSeconds: 300 });
     expect(rule.destinations.map((x: { id: string }) => x.id)).toEqual([d.id]);
 
+    const upgrades = await ctx.app.inject({
+      method: 'POST',
+      url: '/alert-rules',
+      headers: auth,
+      payload: { name: 'Upgrades', type: 'WASM_CHANGED', severity: 'CRITICAL' },
+    });
+    expect(upgrades.statusCode).toBe(201);
+    expect(upgrades.json()).toMatchObject({
+      type: 'WASM_CHANGED',
+      config: {},
+      contractRefId: null,
+    });
+
     const bad = await ctx.app.inject({
       method: 'PATCH',
       url: `/alert-rules/${rule.id}`,
@@ -646,14 +845,24 @@ describe('alert rules, destinations and alert history', () => {
     ).json();
     expect(failed.items.map((a: { id: string }) => a.id)).toEqual([alert.id]);
 
+    const tooLong = await ctx.app.inject({
+      method: 'POST',
+      url: `/alerts/${alert.id}/acknowledge`,
+      headers: auth,
+      payload: { note: 'x'.repeat(1001) },
+    });
+    expect(tooLong.statusCode).toBe(400);
+
     const ack = await ctx.app.inject({
       method: 'POST',
       url: `/alerts/${alert.id}/acknowledge`,
       headers: auth,
+      payload: { note: '  Known issue, extending TTL tomorrow  ' },
     });
     expect(ack.json()).toMatchObject({
       status: 'ACKNOWLEDGED',
       acknowledgedBy: 'Admin (bootstrap token)',
+      acknowledgeNote: 'Known issue, extending TTL tomorrow',
     });
     expect(
       (
@@ -678,8 +887,17 @@ describe('alert rules, destinations and alert history', () => {
       method: 'POST',
       url: `/alerts/${alert.id}/resolve`,
       headers: auth,
+      payload: { note: 'TTL extended' },
     });
-    expect(resolved.json().status).toBe('RESOLVED');
+    expect(resolved.json()).toMatchObject({
+      status: 'RESOLVED',
+      resolvedBy: 'Admin (bootstrap token)',
+      resolveNote: 'TTL extended',
+      // The acknowledgement note is kept.
+      acknowledgeNote: 'Known issue, extending TTL tomorrow',
+    });
+    const listed = (await ctx.app.inject({ url: '/alerts', headers: auth })).json();
+    expect(listed.items[0]).toMatchObject({ id: alert.id, resolveNote: 'TTL extended' });
     const state = await ctx.prisma.alertRuleState.findFirstOrThrow({ where: { ruleId: rule.id } });
     expect(state.openAlertId).toBeNull();
 
