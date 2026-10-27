@@ -103,3 +103,47 @@ export function discordMessage(m: ChatMessage) {
     ],
   };
 }
+
+/** Adaptive Card text colours by severity. */
+const TEAMS_COLORS = { INFO: 'Accent', WARNING: 'Warning', CRITICAL: 'Attention' } as const;
+
+/** Teams message with one Adaptive Card, accepted by incoming webhooks and Workflows. */
+export function teamsMessage(m: ChatMessage) {
+  return {
+    type: 'message',
+    attachments: [
+      {
+        contentType: 'application/vnd.microsoft.card.adaptive',
+        contentUrl: null,
+        content: {
+          $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+          type: 'AdaptiveCard',
+          version: '1.4',
+          msteams: { width: 'Full' },
+          body: [
+            {
+              type: 'TextBlock',
+              text: `${m.prefix} ${m.title}`,
+              weight: 'Bolder',
+              size: 'Medium',
+              wrap: true,
+              color: m.resolved ? 'Good' : TEAMS_COLORS[m.severity],
+            },
+            { type: 'TextBlock', text: m.message, wrap: true },
+            {
+              type: 'FactSet',
+              facts: [
+                { title: 'Severity', value: m.resolved ? 'Resolved' : m.severity },
+                ...(m.contract ? [{ title: 'Contract', value: m.contract }] : []),
+                { title: 'Triggered', value: m.triggeredAt },
+              ],
+            },
+          ],
+          actions: m.link
+            ? [{ type: 'Action.OpenUrl', title: 'View in dashboard', url: m.link }]
+            : [],
+        },
+      },
+    ],
+  };
+}

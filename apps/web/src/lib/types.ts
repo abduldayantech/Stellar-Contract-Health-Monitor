@@ -109,7 +109,7 @@ export interface EventItem {
   inSuccessfulContractCall: boolean;
 }
 
-export type DestinationType = 'WEBHOOK' | 'EMAIL' | 'SLACK' | 'DISCORD';
+export type DestinationType = 'WEBHOOK' | 'EMAIL' | 'SLACK' | 'DISCORD' | 'TEAMS';
 
 export interface Destination {
   id: string;
@@ -121,7 +121,7 @@ export interface Destination {
     secret?: string | null;
     headers?: string[];
     to?: string[];
-    /** Masked chat webhook URL (Slack, Discord). */
+    /** Masked chat webhook URL (Slack, Discord, Teams). */
     webhookUrl?: string | null;
   };
   last7Days?: Record<string, number>;

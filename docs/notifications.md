@@ -10,6 +10,7 @@ Add destination**, or with `POST /destinations`. Every destination has a **Send 
 | `EMAIL`   | `{ to: string[] }`           | Needs `SMTP_HOST` on the worker                                |
 | `SLACK`   | `{ webhookUrl }`             | Slack incoming webhook on `https://hooks.slack.com/...`        |
 | `DISCORD` | `{ webhookUrl }`             | Discord channel webhook `https://discord.com/api/webhooks/...` |
+| `TEAMS`   | `{ webhookUrl }`             | Teams incoming webhook or Workflows (Power Automate) URL       |
 
 ## Delivery and retries
 
@@ -57,3 +58,15 @@ link points at your dashboard.
 Each alert is one embed coloured by severity (info blue, warning amber, critical red, resolved
 green) with the severity, contract and a link to the alert in the dashboard. Mentions are
 disabled, so alert text can never ping `@everyone` or a role.
+
+## Microsoft Teams
+
+Teams accepts an Adaptive Card through either:
+
+- a **Workflows** flow ("Post to a channel when a webhook request is received"), whose URL is on
+  `*.logic.azure.com` or `*.environment.api.powerplatform.com`, or
+- a classic **Incoming Webhook** connector URL on `*.webhook.office.com`.
+
+Copy the URL, add a destination of type **Microsoft Teams**, then press **Send test**. The card
+shows the title (coloured by severity), the message, a fact list with severity, contract and
+trigger time, and a **View in dashboard** button.

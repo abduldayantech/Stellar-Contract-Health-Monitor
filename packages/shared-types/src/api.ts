@@ -121,7 +121,10 @@ export const emailConfigSchema = z.object({
   to: z.array(z.string().email()).min(1).max(20),
 });
 
-/** Builds a schema for an https URL on one of the given hosts (chat incoming webhooks). */
+/**
+ * Builds a schema for an https URL on one of the given hosts (chat incoming webhooks).
+ * A host written as `*.example.com` matches any subdomain of example.com.
+ */
 const httpsUrlOn = (hosts: string[], what: string) =>
   z
     .string()
@@ -132,7 +135,11 @@ const httpsUrlOn = (hosts: string[], what: string) =>
       (u) => {
         try {
           const parsed = new URL(u);
-          return parsed.protocol === 'https:' && hosts.includes(parsed.hostname.toLowerCase());
+          const host = parsed.hostname.toLowerCase();
+          return (
+            parsed.protocol === 'https:' &&
+            hosts.some((h) => (h.startsWith('*.') ? host.endsWith(h.slice(1)) : host === h))
+          );
         } catch {
           return false;
         }
@@ -154,12 +161,21 @@ export const discordConfigSchema = z.object({
   ),
 });
 
+/** Teams incoming webhooks (webhook.office.com) and Workflows / Power Automate URLs. */
+export const teamsConfigSchema = z.object({
+  webhookUrl: httpsUrlOn(
+    ['*.webhook.office.com', '*.logic.azure.com', '*.environment.api.powerplatform.com'],
+    'Teams webhook URL',
+  ),
+});
+
 /** Config schema per destination type, for validating updates and stored configs. */
 export const destinationConfigSchemas = {
   WEBHOOK: webhookConfigSchema,
   EMAIL: emailConfigSchema,
   SLACK: slackConfigSchema,
   DISCORD: discordConfigSchema,
+  TEAMS: teamsConfigSchema,
 } as const;
 
 export const createDestinationSchema = z.discriminatedUnion('type', [
@@ -186,6 +202,12 @@ export const createDestinationSchema = z.discriminatedUnion('type', [
     name: z.string().trim().min(1).max(120),
     enabled: z.boolean().default(true),
     config: discordConfigSchema,
+  }),
+  z.object({
+    type: z.literal('TEAMS'),
+    name: z.string().trim().min(1).max(120),
+    enabled: z.boolean().default(true),
+    config: teamsConfigSchema,
   }),
 ]);
 

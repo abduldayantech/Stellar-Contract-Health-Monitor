@@ -5,6 +5,7 @@ import {
   discordMessage,
   escapeSlack,
   slackMessage,
+  teamsMessage,
 } from '../../src/chat';
 import { deliveryBackoff, retryAfterMs } from '../../src/delivery';
 import { samplePayload } from './fixtures';
@@ -76,5 +77,30 @@ describe('retry timing', () => {
       deliveryBackoff(1, 'delivery', Object.assign(new Error(), { retryAfterMs: 90_000 })),
     ).toBe(90_000);
     expect(deliveryBackoff(20)).toBe(3600_000);
+  });
+});
+
+describe('teamsMessage', () => {
+  it('wraps an Adaptive Card with facts and a dashboard action', () => {
+    const msg = teamsMessage(chatMessage(samplePayload(), 'https://dash.example.com'));
+    expect(msg.type).toBe('message');
+    const card = msg.attachments[0]!;
+    expect(card.contentType).toBe('application/vnd.microsoft.card.adaptive');
+    expect(card.content.body[0]).toMatchObject({ color: 'Attention', weight: 'Bolder' });
+    expect(card.content.body[2]).toMatchObject({
+      type: 'FactSet',
+      facts: [
+        { title: 'Severity', value: 'CRITICAL' },
+        { title: 'Contract', value: 'Token · CABC (TESTNET)' },
+        { title: 'Triggered', value: '2026-10-26T11:59:00.000Z' },
+      ],
+    });
+    expect(card.content.actions).toEqual([
+      {
+        type: 'Action.OpenUrl',
+        title: 'View in dashboard',
+        url: 'https://dash.example.com/alerts/history?alert=alert_1',
+      },
+    ]);
   });
 });

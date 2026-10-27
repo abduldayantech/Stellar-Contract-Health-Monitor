@@ -507,6 +507,23 @@ describe('alert rules, destinations and alert history', () => {
     });
     expect(res.statusCode).toBe(201);
     expect(res.json().config).toEqual({ webhookUrl: 'https://discord.com/…oken' });
+
+    const teams = await ctx.app.inject({
+      method: 'POST',
+      url: '/destinations',
+      headers: auth,
+      payload: {
+        type: 'TEAMS',
+        name: 'Ops',
+        config: { webhookUrl: 'https://contoso.webhook.office.com/webhookb2/abcd1234' },
+      },
+    });
+    expect(teams.statusCode).toBe(201);
+    expect(teams.json().config).toEqual({ webhookUrl: 'https://contoso.webhook.office.com/…1234' });
+    const row = await ctx.prisma.notificationDestination.findUniqueOrThrow({
+      where: { id: teams.json().id },
+    });
+    expect(JSON.stringify(row.config)).not.toContain('office.com');
   });
 
   async function webhook() {
