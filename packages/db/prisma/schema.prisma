@@ -47,6 +47,11 @@ enum AlertStatus {
   RESOLVED
 }
 
+enum SilenceRecurrence {
+  DAILY
+  WEEKLY
+}
+
 enum DestinationType {
   WEBHOOK
   EMAIL
@@ -236,6 +241,7 @@ model Alert {
   title           String
   message         String
   context         Json
+  silenced        Boolean                @default(false)
   triggeredAt     DateTime               @default(now())
   acknowledgedAt  DateTime?
   acknowledgedBy  String?
@@ -246,7 +252,6 @@ model Alert {
   resolvedBy      String?
   /// Optional note left when resolving.
   resolveNote     String?
-  silenced        Boolean                @default(false)
   deliveries      NotificationDelivery[]
 
   @@index([triggeredAt(sort: Desc)])
@@ -257,20 +262,24 @@ model Alert {
 
 /// A temporary mute for one contract, one rule, or a specific contract/rule pair.
 model Silence {
-  id            String     @id @default(cuid())
+  id            String             @id @default(cuid())
   contractRefId String?
-  contract      Contract?  @relation(fields: [contractRefId], references: [id], onDelete: Cascade)
+  contract      Contract?          @relation(fields: [contractRefId], references: [id], onDelete: Cascade)
   ruleId        String?
-  rule          AlertRule? @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  rule          AlertRule?         @relation(fields: [ruleId], references: [id], onDelete: Cascade)
   startsAt      DateTime
   endsAt        DateTime
+  recurrence    SilenceRecurrence?
+  timeZone      String             @default("UTC")
   reason        String
   createdBy     String
-  createdAt     DateTime   @default(now())
+  createdAt     DateTime           @default(now())
 
   @@index([startsAt, endsAt])
   @@index([contractRefId])
   @@index([ruleId])
+  @@index([contractRefId, startsAt, endsAt])
+  @@index([ruleId, startsAt, endsAt])
 }
 
 model NotificationDelivery {
@@ -296,7 +305,7 @@ model NotificationDelivery {
   @@index([destinationId])
 }
 
-/// What a token may do. VIEWER: read only. EDITOR: manage contracts, rules, destinations
+/// What a token may do. VIEWER: read only. EDITOR: manage contracts, rules, silences, destinations
 /// and alerts. ADMIN: also RPC settings, notification preferences, API tokens and the audit log.
 enum TokenRole {
   VIEWER

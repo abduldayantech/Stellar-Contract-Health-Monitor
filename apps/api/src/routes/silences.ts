@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import type { Prisma } from '@stellar-health/db';
 import { createSilenceSchema, updateSilenceSchema } from '@stellar-health/shared-types';
 import { HttpError, notFound } from '../lib/errors';
 import type { AppDeps } from '../app';
@@ -15,6 +16,8 @@ function serializeSilence(silence: {
   ruleId: string | null;
   startsAt: Date;
   endsAt: Date;
+  recurrence: 'DAILY' | 'WEEKLY' | null;
+  timeZone: string;
   reason: string;
   createdBy: string;
   createdAt: Date;
@@ -29,6 +32,8 @@ function serializeSilence(silence: {
     rule: silence.rule ?? null,
     startsAt: silence.startsAt,
     endsAt: silence.endsAt,
+    recurrence: silence.recurrence,
+    timeZone: silence.timeZone,
     reason: silence.reason,
     createdBy: silence.createdBy,
     createdAt: silence.createdAt,
@@ -51,8 +56,29 @@ export async function silenceRoutes(app: FastifyInstance, { prisma }: AppDeps) {
     if (!ruleCount) throw new HttpError(400, 'INVALID_RULE', 'Alert rule does not exist');
   }
 
-  app.get('/silences', async () => {
+  app.get('/silences', async (req) => {
+    const query = z
+      .object({ contractRefId: z.string().optional(), ruleId: z.string().optional() })
+      .parse(req.query);
+    const filters: Prisma.SilenceWhereInput[] = [];
+    if (query.contractRefId) {
+      const applicableRules = await prisma.alertRule.findMany({
+        where: { OR: [{ contractRefId: query.contractRefId }, { contractRefId: null }] },
+        select: { id: true },
+      });
+      filters.push({
+        OR: [
+          { contractRefId: query.contractRefId },
+          {
+            contractRefId: null,
+            OR: [{ ruleId: null }, { ruleId: { in: applicableRules.map((rule) => rule.id) } }],
+          },
+        ],
+      });
+    }
+    if (query.ruleId) filters.push({ ruleId: query.ruleId });
     const rows = await prisma.silence.findMany({
+      where: filters.length ? { AND: filters } : {},
       include,
       orderBy: [{ startsAt: 'desc' }, { createdAt: 'desc' }],
     });
@@ -77,6 +103,8 @@ export async function silenceRoutes(app: FastifyInstance, { prisma }: AppDeps) {
         ruleId,
         startsAt: body.startsAt,
         endsAt: body.endsAt,
+        recurrence: body.recurrence,
+        timeZone: body.timeZone,
         reason: body.reason,
         createdBy: req.principal!.name,
       },
@@ -102,6 +130,8 @@ export async function silenceRoutes(app: FastifyInstance, { prisma }: AppDeps) {
         ruleId,
         startsAt: body.startsAt,
         endsAt: body.endsAt,
+        recurrence: body.recurrence,
+        timeZone: body.timeZone,
         reason: body.reason,
       },
       include,

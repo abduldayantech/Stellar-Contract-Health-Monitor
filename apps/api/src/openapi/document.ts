@@ -279,6 +279,7 @@ export const ROUTES: RouteDoc[] = [
     path: '/silences',
     tag: 'Silences',
     summary: 'List contract and rule silences',
+    query: z.object({ contractRefId: z.string().optional(), ruleId: z.string().optional() }),
     responses: { 200: ok(r.list(r.silence)) },
   },
   {

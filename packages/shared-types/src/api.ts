@@ -296,6 +296,20 @@ const silenceScopeSchema = z.object({
       .datetime()
       .transform((value) => new Date(value)),
   ]),
+  recurrence: z.enum(['DAILY', 'WEEKLY']).nullable().default(null),
+  timeZone: z
+    .string()
+    .min(1)
+    .max(100)
+    .refine((value) => {
+      try {
+        new Intl.DateTimeFormat('en', { timeZone: value });
+        return true;
+      } catch {
+        return false;
+      }
+    }, 'Must be a valid IANA timezone')
+    .default('UTC'),
   reason: z.string().trim().min(1).max(500),
 });
 
@@ -359,6 +373,7 @@ export type NotificationPreferences = z.infer<typeof notificationPreferencesSche
 
 export type CreateContractInput = z.infer<typeof createContractSchema>;
 export type CreateAlertRuleInput = z.infer<typeof createAlertRuleSchema>;
+export type CreateSilenceInput = z.infer<typeof createSilenceSchema>;
 export type CreateDestinationInput = z.infer<typeof createDestinationSchema>;
 export type ListEventsQuery = z.infer<typeof listEventsQuerySchema>;
 export type ListAlertsQuery = z.infer<typeof listAlertsQuerySchema>;

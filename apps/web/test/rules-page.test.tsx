@@ -104,4 +104,28 @@ describe('Alert rules page', () => {
     expect(screen.queryByDisplayValue('Quiet (copy)')).not.toBeInTheDocument();
     expect(mutateMock).toHaveBeenCalled();
   });
+
+  it('creates a contract silence from the silences section', async () => {
+    const user = userEvent.setup();
+    render(<RulesPage />);
+
+    await user.click(screen.getByRole('button', { name: 'New silence' }));
+    await user.selectOptions(screen.getByLabelText('Contract scope'), 'c1');
+    await user.type(screen.getByLabelText('Reason'), 'Planned upgrade');
+    await user.click(screen.getByRole('button', { name: 'Create silence' }));
+
+    expect(apiMock).toHaveBeenCalledWith(
+      '/silences',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.objectContaining({
+          contractRefId: 'c1',
+          ruleId: null,
+          recurrence: null,
+          reason: 'Planned upgrade',
+          timeZone: expect.any(String),
+        }),
+      }),
+    );
+  });
 });

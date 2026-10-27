@@ -124,18 +124,6 @@ command, and TTL alerts include the same command for entries that are still live
 | POST                 | `/destinations/:id/test`          | Queue a test notification                                                                                             |
 | GET                  | `/destinations/:id/deliveries`    | Last 50 deliveries                                                                                                    |
 
-### Silences
-
-| Method               | Path            | Description                      |
-| -------------------- | --------------- | -------------------------------- |
-| GET / POST           | `/silences`     | List / create a silence          |
-| GET / PATCH / DELETE | `/silences/:id` | Read / update / delete a silence |
-
-Create a one-time silence with `startsAt`, `endsAt`, and `reason`, and at least one of `contractRefId` or
-`ruleId`. Supplying both limits the silence to that contract/rule pair. Alerts are still recorded
-with `silenced: true` while the silence is active, but no notification deliveries are created.
-Expired silences stop applying automatically; their creator is recorded for auditing.
-
 Rule body:
 
 ```json
@@ -152,6 +140,33 @@ Rule body:
 
 `TTL_EXPIRY` config: `{ "ledgersThreshold": 120960 }`. `INACTIVITY` config: `{ "windowSeconds": 86400 }`. `WASM_CHANGED` takes no config
 (`{}` or omit it).
+
+### Silences
+
+| Method               | Path            | Description                             |
+| -------------------- | --------------- | --------------------------------------- |
+| GET / POST           | `/silences`     | List (`?contractRefId&ruleId`) / create |
+| GET / PATCH / DELETE | `/silences/:id` | Read / update / delete                  |
+
+Create a silence with at least one of `contractRefId` or `ruleId`, plus `startsAt`, `endsAt` and
+`reason`. When both scopes are supplied, the silence applies to their intersection. An omitted or
+`null` `recurrence` mutes once; `DAILY` and `WEEKLY` repeat the window in `timeZone` (an IANA
+timezone, default `UTC`). For example:
+
+```json
+{
+  "contractRefId": "<contract id>",
+  "startsAt": "2026-10-27T09:00:00.000Z",
+  "endsAt": "2026-10-27T10:00:00.000Z",
+  "recurrence": "WEEKLY",
+  "timeZone": "America/New_York",
+  "reason": "Planned contract upgrade"
+}
+```
+
+Alerts that match an active silence are still recorded with `silenced: true` and do not create
+deliveries. A silence records its creator; state-changing API requests are also recorded in the
+audit log.
 
 ### Alerts
 

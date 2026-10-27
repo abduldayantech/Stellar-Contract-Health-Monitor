@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from 'react';
 import {
   Alert,
+  Badge,
   Button,
   Card,
   CardHeader,
@@ -31,12 +32,16 @@ export function SilencesPanel({
   fixedContractRefId?: string;
   buttonLabel?: string;
 }) {
-  const silences = useApi<{ items: Silence[] }>('/silences');
+  const silences = useApi<{ items: Silence[] }>(
+    `/silences${fixedContractRefId ? `?contractRefId=${fixedContractRefId}` : ''}`,
+  );
   const [adding, setAdding] = useState(false);
   const [contractRefId, setContractRefId] = useState(fixedContractRefId ?? '');
   const [ruleId, setRuleId] = useState('');
   const [startsAt, setStartsAt] = useState(() => localDateTime(new Date()));
   const [endsAt, setEndsAt] = useState(() => localDateTime(new Date(Date.now() + 3_600_000)));
+  const [recurrence, setRecurrence] = useState<'NONE' | 'DAILY' | 'WEEKLY'>('NONE');
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -53,6 +58,8 @@ export function SilencesPanel({
           ruleId: ruleId || null,
           startsAt: new Date(startsAt).toISOString(),
           endsAt: new Date(endsAt).toISOString(),
+          recurrence: recurrence === 'NONE' ? null : recurrence,
+          timeZone,
           reason,
         },
       });
@@ -167,6 +174,20 @@ export function SilencesPanel({
               required
             />
           </Field>
+          <Field label="Repeat" htmlFor="silence-recurrence">
+            <Select
+              id="silence-recurrence"
+              value={recurrence}
+              onChange={(event) => setRecurrence(event.target.value as typeof recurrence)}
+            >
+              <option value="NONE">Does not repeat</option>
+              <option value="DAILY">Daily</option>
+              <option value="WEEKLY">Weekly</option>
+            </Select>
+          </Field>
+          <p className="self-end text-sm text-slate-600 dark:text-slate-400">
+            Times repeat in {timeZone}
+          </p>
           <Field label="Reason" htmlFor="silence-reason">
             <Input
               id="silence-reason"
@@ -219,8 +240,12 @@ export function SilencesPanel({
               <li key={silence.id} className="flex flex-wrap items-start gap-3 px-4 py-3">
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium">{scopeDescription(silence)}</p>
+                  {silence.recurrence && (
+                    <Badge tone="indigo">{silence.recurrence.toLowerCase()}</Badge>
+                  )}
                   <p className="text-xs text-slate-600 dark:text-slate-400">
                     {formatDateTime(silence.startsAt)} – {formatDateTime(silence.endsAt)} · {state}
+                    {silence.recurrence && ` · ${silence.timeZone}`}
                   </p>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
                     {silence.reason} · created by {silence.createdBy}

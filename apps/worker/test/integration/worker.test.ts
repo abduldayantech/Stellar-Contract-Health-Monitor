@@ -280,6 +280,43 @@ describe('event alert rules', () => {
     expect(h.queued).toHaveLength(1);
   });
 
+  it('applies daily silence windows in their timezone across daylight-saving changes', async () => {
+    const c = await createContract(8, { createdAt: past(3600_000) });
+    const rule = await prisma.alertRule.create({
+      data: {
+        name: 'Transfers',
+        type: 'EVENT_MATCH',
+        contractRefId: c.id,
+        cooldownSeconds: 0,
+        config: { topics: ['transfer'] },
+        createdAt: past(3600_000),
+      },
+    });
+    await prisma.silence.create({
+      data: {
+        ruleId: rule.id,
+        startsAt: new Date('2026-10-30T13:00:00.000Z'),
+        endsAt: new Date('2026-10-30T14:00:00.000Z'),
+        recurrence: 'DAILY',
+        timeZone: 'America/New_York',
+        reason: 'Daily maintenance',
+        createdBy: 'Test operator',
+      },
+    });
+
+    h.setNow(new Date('2026-11-02T13:30:00.000Z'));
+    h.rpc.emit(c.contractId, 701, ['transfer'], new Date('2026-11-02T13:30:00.000Z'));
+    await ingestContract(h.deps, c.id);
+    const outsideWindow = await prisma.alert.findFirstOrThrow();
+    expect(outsideWindow.silenced).toBe(false);
+
+    h.setNow(new Date('2026-11-02T14:30:00.000Z'));
+    h.rpc.emit(c.contractId, 702, ['transfer'], new Date('2026-11-02T14:30:00.000Z'));
+    await ingestContract(h.deps, c.id);
+    const alerts = await prisma.alert.findMany({ orderBy: { triggeredAt: 'asc' } });
+    expect(alerts.map((alert) => alert.silenced)).toEqual([false, true]);
+  });
+
   it('triggers on matching new events, queues deliveries and respects cooldown', async () => {
     const c = await createContract(10, { createdAt: past(3600_000) });
     const d = await webhookDestination('https://example.com/hook');

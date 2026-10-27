@@ -5,6 +5,137 @@ import type { WorkerDeps } from './deps';
 
 const PREFERENCES_KEY = 'notificationPreferences';
 
+function dateParts(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat('en', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((part) => part.type === type)?.value);
+  return {
+    year: value('year'),
+    month: value('month'),
+    day: value('day'),
+    hour: value('hour'),
+    minute: value('minute'),
+    second: value('second'),
+  };
+}
+
+function localDateTimeToUtc(
+  parts: ReturnType<typeof dateParts>,
+  milliseconds: number,
+  timeZone: string,
+): Date {
+  const localTimestamp =
+    Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second) +
+    milliseconds;
+  const offsets = [-36, 0, 36].map((hours) => {
+    const probe = localTimestamp + hours * 3_600_000;
+    const local = dateParts(new Date(probe), timeZone);
+    return (
+      Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute, local.second) -
+      (probe - (probe % 1000))
+    );
+  });
+  const candidates = [...new Set(offsets)].map((offset) => new Date(localTimestamp - offset));
+  const exact = candidates.filter((candidate) => {
+    const local = dateParts(candidate, timeZone);
+    return (
+      local.year === parts.year &&
+      local.month === parts.month &&
+      local.day === parts.day &&
+      local.hour === parts.hour &&
+      local.minute === parts.minute &&
+      local.second === parts.second
+    );
+  });
+  if (exact.length) return new Date(Math.min(...exact.map((candidate) => candidate.getTime())));
+  return (
+    candidates
+      .map((candidate) => {
+        const local = dateParts(candidate, timeZone);
+        return {
+          candidate,
+          delta:
+            Date.UTC(
+              local.year,
+              local.month - 1,
+              local.day,
+              local.hour,
+              local.minute,
+              local.second,
+            ) - localTimestamp,
+        };
+      })
+      .filter(({ delta }) => delta >= 0)
+      .sort((a, b) => a.delta - b.delta)[0]?.candidate ?? candidates[0]!
+  );
+}
+
+function activeNow(
+  silence: {
+    startsAt: Date;
+    endsAt: Date;
+    recurrence: 'DAILY' | 'WEEKLY' | null;
+    timeZone: string;
+  },
+  now: Date,
+): boolean {
+  if (!silence.recurrence) return silence.startsAt <= now && now < silence.endsAt;
+
+  const anchor = dateParts(silence.startsAt, silence.timeZone);
+  const current = dateParts(now, silence.timeZone);
+  const currentDay = Date.UTC(current.year, current.month - 1, current.day);
+  const anchorDay = Date.UTC(anchor.year, anchor.month - 1, anchor.day);
+  let daysBack =
+    silence.recurrence === 'DAILY'
+      ? 0
+      : (new Date(currentDay).getUTCDay() - new Date(anchorDay).getUTCDay() + 7) % 7;
+  const startParts = new Date(currentDay - daysBack * 86_400_000);
+  let occurrenceStart = localDateTimeToUtc(
+    {
+      ...current,
+      year: startParts.getUTCFullYear(),
+      month: startParts.getUTCMonth() + 1,
+      day: startParts.getUTCDate(),
+      hour: anchor.hour,
+      minute: anchor.minute,
+      second: anchor.second,
+    },
+    silence.startsAt.getUTCMilliseconds(),
+    silence.timeZone,
+  );
+  const intervalDays = silence.recurrence === 'DAILY' ? 1 : 7;
+  if (occurrenceStart > now) {
+    daysBack += intervalDays;
+    const previousStart = new Date(currentDay - daysBack * 86_400_000);
+    occurrenceStart = localDateTimeToUtc(
+      {
+        ...current,
+        year: previousStart.getUTCFullYear(),
+        month: previousStart.getUTCMonth() + 1,
+        day: previousStart.getUTCDate(),
+        hour: anchor.hour,
+        minute: anchor.minute,
+        second: anchor.second,
+      },
+      silence.startsAt.getUTCMilliseconds(),
+      silence.timeZone,
+    );
+  }
+  const occurrenceEnd = new Date(
+    occurrenceStart.getTime() + silence.endsAt.getTime() - silence.startsAt.getTime(),
+  );
+  return occurrenceStart <= now && now < occurrenceEnd;
+}
+
 async function loadPreferences(deps: WorkerDeps) {
   const row = await deps.prisma.setting.findUnique({ where: { key: PREFERENCES_KEY } });
   return notificationPreferencesSchema.parse(row?.value ?? {});
@@ -43,22 +174,21 @@ export async function triggerAlert(
 ): Promise<string> {
   const { rule, contract, description } = params;
   const now = deps.now();
-  const activeSilence = await deps.prisma.silence.findFirst({
-    where: {
-      startsAt: { lte: now },
-      endsAt: { gt: now },
-      AND: [
-        { OR: [{ contractRefId: null }, { contractRefId: contract.id }] },
-        { OR: [{ ruleId: null }, { ruleId: rule.id }] },
-      ],
-    },
-    select: { id: true },
-  });
-  const silenced = activeSilence !== null;
-  const destinationIds = silenced ? [] : await destinationsFor(deps, rule.id);
+  const destinationIds = await destinationsFor(deps, rule.id);
   const maxAttempts = deps.config.WEBHOOK_MAX_ATTEMPTS;
 
-  const { alertId, deliveryIds } = await deps.prisma.$transaction(async (tx) => {
+  const { alertId, deliveryIds, silenced } = await deps.prisma.$transaction(async (tx) => {
+    const silences = await tx.silence.findMany({
+      where: {
+        AND: [
+          { OR: [{ contractRefId: contract.id }, { contractRefId: null }] },
+          { OR: [{ ruleId: rule.id }, { ruleId: null }] },
+          { startsAt: { lte: now } },
+          { OR: [{ recurrence: null, endsAt: { gt: now } }, { recurrence: { not: null } }] },
+        ],
+      },
+    });
+    const silenced = silences.some((silence) => activeNow(silence, now));
     const alert = await tx.alert.create({
       data: {
         ruleId: rule.id,
@@ -67,10 +197,10 @@ export async function triggerAlert(
         title: description.title.slice(0, 500),
         message: description.message.slice(0, 5000),
         context: description.context as Prisma.InputJsonValue,
-        triggeredAt: now,
         silenced,
+        triggeredAt: now,
         deliveries: {
-          create: destinationIds.map((destinationId) => ({
+          create: (silenced ? [] : destinationIds).map((destinationId) => ({
             destinationId,
             kind: 'alert.triggered',
             maxAttempts,
@@ -89,7 +219,11 @@ export async function triggerAlert(
       },
       update: { lastTriggeredAt: now, ...(params.level ? { openAlertId: alert.id } : {}) },
     });
-    return { alertId: alert.id, deliveryIds: alert.deliveries.map((d) => d.id) };
+    return {
+      alertId: alert.id,
+      deliveryIds: alert.deliveries.map((d) => d.id),
+      silenced,
+    };
   });
 
   deps.metrics.alertsTriggered.labels(rule.type, params.severity).inc();
@@ -140,6 +274,7 @@ export async function resolveLevelAlert(
     data: { status: 'RESOLVED', resolvedAt: now },
   });
   deps.metrics.alertsResolved.labels(params.rule.type).inc();
+  if (alert.silenced) return;
 
   // Incident tools such as PagerDuty must hear about the resolve to close what they opened,
   // whatever the resolve-notification preference says.
