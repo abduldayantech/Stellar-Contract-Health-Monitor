@@ -57,6 +57,21 @@ export interface AlertRule {
   createdAt: string;
 }
 
+export interface Silence {
+  id: string;
+  contractRefId: string | null;
+  contract: { id: string; contractId: string; label: string | null; network: Network } | null;
+  ruleId: string | null;
+  rule: { id: string; name: string; type: string } | null;
+  startsAt: string;
+  endsAt: string;
+  recurrence: 'DAILY' | 'WEEKLY' | null;
+  timeZone: string;
+  reason: string;
+  createdBy: string;
+  createdAt: string;
+}
+
 export interface Delivery {
   id: string;
   alertId: string | null;
@@ -79,6 +94,7 @@ export interface AlertItem {
   title: string;
   message: string;
   context: Record<string, unknown>;
+  silenced: boolean;
   triggeredAt: string;
   acknowledgedAt: string | null;
   acknowledgedBy: string | null;

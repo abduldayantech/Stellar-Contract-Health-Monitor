@@ -244,6 +244,7 @@ export function serializeAlert(
     title: a.title,
     message: a.message,
     context: a.context,
+    silenced: a.silenced,
     triggeredAt: a.triggeredAt,
     acknowledgedAt: a.acknowledgedAt,
     acknowledgedBy: a.acknowledgedBy,

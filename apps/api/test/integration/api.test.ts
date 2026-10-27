@@ -618,6 +618,86 @@ describe('events', () => {
 });
 
 describe('alert rules, destinations and alert history', () => {
+  it('lets editors create, query, update and delete audited silences', async () => {
+    const c = await register(24);
+    const rule = await ctx.prisma.alertRule.create({
+      data: {
+        name: 'Transfers',
+        type: 'EVENT_MATCH',
+        contractRefId: c.id,
+        config: { topics: ['transfer'] },
+      },
+    });
+    const token = await ctx.app.inject({
+      method: 'POST',
+      url: '/settings/tokens',
+      headers: auth,
+      payload: { name: 'Silence editor', role: 'EDITOR' },
+    });
+    const editor = { authorization: `Bearer ${token.json().token}` };
+    const created = await ctx.app.inject({
+      method: 'POST',
+      url: '/silences',
+      headers: editor,
+      payload: {
+        ruleId: rule.id,
+        startsAt: '2026-10-27T09:00:00.000Z',
+        endsAt: '2026-10-27T10:00:00.000Z',
+        recurrence: 'WEEKLY',
+        timeZone: 'America/New_York',
+        reason: 'Planned upgrade',
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    expect(created.json()).toMatchObject({
+      ruleId: rule.id,
+      recurrence: 'WEEKLY',
+      timeZone: 'America/New_York',
+      createdBy: 'Silence editor',
+    });
+
+    const scoped = await ctx.app.inject({
+      url: `/silences?contractRefId=${c.id}`,
+      headers: editor,
+    });
+    expect(scoped.json().items.map((item: { id: string }) => item.id)).toContain(created.json().id);
+    const patched = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/silences/${created.json().id}`,
+      headers: editor,
+      payload: { reason: 'Upgrade window' },
+    });
+    expect(patched.statusCode).toBe(200);
+    expect(patched.json().reason).toBe('Upgrade window');
+
+    const invalid = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/silences/${created.json().id}`,
+      headers: editor,
+      payload: { endsAt: '2026-10-27T08:00:00.000Z' },
+    });
+    expect(invalid.statusCode).toBe(400);
+
+    expect(
+      (
+        await ctx.app.inject({
+          method: 'DELETE',
+          url: `/silences/${created.json().id}`,
+          headers: editor,
+        })
+      ).statusCode,
+    ).toBe(204);
+    await vi.waitFor(async () => {
+      const log = (await ctx.app.inject({ url: '/audit-log?limit=10', headers: auth })).json();
+      expect(
+        log.items.some(
+          (entry: { route: string; actorName: string }) =>
+            entry.route === '/silences' && entry.actorName === 'Silence editor',
+        ),
+      ).toBe(true);
+    });
+  });
+
   it('creates Slack destinations with the URL encrypted and masked', async () => {
     const webhookUrl = 'https://hooks.slack.com/services/T000/B000/abcdefghij';
     const res = await ctx.app.inject({

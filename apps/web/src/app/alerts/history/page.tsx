@@ -7,6 +7,7 @@ import useSWRInfinite from 'swr/infinite';
 import {
   Alert,
   AlertStatusBadge,
+  Badge,
   Button,
   Card,
   DeliveryStatusBadge,
@@ -174,6 +175,7 @@ function HistoryPage() {
                       <div className="flex flex-wrap items-center gap-2">
                         <SeverityBadge severity={a.severity} />
                         <AlertStatusBadge status={a.status} />
+                        {a.silenced && <Badge tone="slate">silenced</Badge>}
                         {a.deliveries.length > 0 && (
                           <DeliveryStatusBadge
                             status={

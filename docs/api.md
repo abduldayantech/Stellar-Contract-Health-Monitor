@@ -25,7 +25,7 @@ Every named token has a role (default `VIEWER`):
 | Role     | Can                                                                                                                                         |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `VIEWER` | Read everything except API tokens and the audit log                                                                                         |
-| `EDITOR` | Also register/pause/delete contracts, manage storage entries, alert rules and destinations, acknowledge/resolve alerts and retry deliveries |
+| `EDITOR` | Also register/pause/delete contracts, manage storage entries, alert rules, silences and destinations, acknowledge/resolve alerts and retry deliveries |
 | `ADMIN`  | Also change RPC providers and notification preferences, manage API tokens and read the audit log                                            |
 
 The bootstrap token is always `ADMIN`. Requests without the needed role get `403 FORBIDDEN`.
@@ -140,6 +140,33 @@ Rule body:
 
 `TTL_EXPIRY` config: `{ "ledgersThreshold": 120960 }`. `INACTIVITY` config: `{ "windowSeconds": 86400 }`. `WASM_CHANGED` takes no config
 (`{}` or omit it).
+
+### Silences
+
+| Method               | Path            | Description                                  |
+| -------------------- | --------------- | -------------------------------------------- |
+| GET / POST           | `/silences`     | List (`?contractRefId&ruleId`) / create      |
+| GET / PATCH / DELETE | `/silences/:id` | Read / update / delete                      |
+
+Create a silence with at least one of `contractRefId` or `ruleId`, plus `startsAt`, `endsAt` and
+`reason`. When both scopes are supplied, the silence applies to their intersection. An omitted or
+`null` `recurrence` mutes once; `DAILY` and `WEEKLY` repeat the window in `timeZone` (an IANA
+timezone, default `UTC`). For example:
+
+```json
+{
+  "contractRefId": "<contract id>",
+  "startsAt": "2026-10-27T09:00:00.000Z",
+  "endsAt": "2026-10-27T10:00:00.000Z",
+  "recurrence": "WEEKLY",
+  "timeZone": "America/New_York",
+  "reason": "Planned contract upgrade"
+}
+```
+
+Alerts that match an active silence are still recorded with `silenced: true` and do not create
+deliveries. A silence records its creator; state-changing API requests are also recorded in the
+audit log.
 
 ### Alerts
 

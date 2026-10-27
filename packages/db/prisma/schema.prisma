@@ -47,6 +47,11 @@ enum AlertStatus {
   RESOLVED
 }
 
+enum SilenceRecurrence {
+  DAILY
+  WEEKLY
+}
+
 enum DestinationType {
   WEBHOOK
   EMAIL
@@ -114,6 +119,7 @@ model Contract {
   storageEntries StorageEntry[]
   alertRules     AlertRule[]
   alerts         Alert[]
+  silences       Silence[]
 
   @@unique([network, contractId])
   @@index([status])
@@ -185,6 +191,7 @@ model AlertRule {
   destinations    NotificationDestination[]
   alerts          Alert[]
   states          AlertRuleState[]
+  silences        Silence[]
 
   @@index([contractRefId])
 }
@@ -234,6 +241,7 @@ model Alert {
   title           String
   message         String
   context         Json
+  silenced        Boolean                @default(false)
   triggeredAt     DateTime               @default(now())
   acknowledgedAt  DateTime?
   acknowledgedBy  String?
@@ -250,6 +258,26 @@ model Alert {
   @@index([status])
   @@index([contractRefId])
   @@index([ruleId])
+}
+
+/// A temporary mute for a contract, a rule, or their intersection.
+model Silence {
+  id            String             @id @default(cuid())
+  contractRefId String?
+  contract      Contract?          @relation(fields: [contractRefId], references: [id], onDelete: Cascade)
+  ruleId        String?
+  rule          AlertRule?         @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  startsAt      DateTime
+  endsAt        DateTime
+  recurrence    SilenceRecurrence?
+  /// IANA timezone used to repeat the local start time.
+  timeZone      String             @default("UTC")
+  reason        String
+  createdBy     String
+  createdAt     DateTime           @default(now())
+
+  @@index([contractRefId, startsAt, endsAt])
+  @@index([ruleId, startsAt, endsAt])
 }
 
 model NotificationDelivery {
@@ -275,7 +303,7 @@ model NotificationDelivery {
   @@index([destinationId])
 }
 
-/// What a token may do. VIEWER: read only. EDITOR: manage contracts, rules, destinations
+/// What a token may do. VIEWER: read only. EDITOR: manage contracts, rules, silences, destinations
 /// and alerts. ADMIN: also RPC settings, notification preferences, API tokens and the audit log.
 enum TokenRole {
   VIEWER

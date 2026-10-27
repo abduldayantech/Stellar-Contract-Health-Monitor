@@ -16,9 +16,10 @@ import {
 import { PageHeader } from '@/components/app-shell';
 import { DestinationsCard } from '@/components/destinations';
 import { RuleForm } from '@/components/rule-form';
+import { SilencesSection } from '@/components/silences';
 import { api, errorMessage, useApi } from '@/lib/api';
 import { describeRule, RULE_TYPE_LABELS } from '@/lib/rules';
-import type { AlertRule, Contract, Destination, Page } from '@/lib/types';
+import type { AlertRule, Contract, Destination, Page, Silence } from '@/lib/types';
 
 function RulesPage() {
   const params = useSearchParams();
@@ -26,6 +27,7 @@ function RulesPage() {
   const rules = useApi<Page<AlertRule>>('/alert-rules');
   const contracts = useApi<Page<Contract>>('/contracts?limit=500');
   const destinations = useApi<Page<Destination>>('/destinations');
+  const silences = useApi<{ items: Silence[] }>('/silences');
   const [showForm, setShowForm] = useState(Boolean(presetContract));
   const [editing, setEditing] = useState<AlertRule | null>(null);
   const [copying, setCopying] = useState<AlertRule | null>(null);
@@ -182,6 +184,14 @@ function RulesPage() {
         destinations={destinations.data?.items}
         loading={destinations.isLoading}
         onChange={() => destinations.mutate()}
+      />
+
+      <SilencesSection
+        silences={silences.data?.items}
+        contracts={contracts.data?.items ?? []}
+        rules={rules.data?.items ?? []}
+        loading={silences.isLoading}
+        onChange={() => silences.mutate()}
       />
     </div>
   );
